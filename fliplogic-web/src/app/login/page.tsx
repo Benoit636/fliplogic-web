@@ -33,56 +33,33 @@ setLoading(false);
 };
 
 return (
-<div className="min-h-screen flex items-center justify-center" style={{background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)'}}>
-<div className="w-full max-w-md px-6">
-<div className="text-center mb-8">
-<div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4" style={{background: 'linear-gradient(135deg, #e94560, #0f3460)'}}>
-<span className="text-white text-2xl font-bold">FL</span>
+<div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)'}}>
+<div style={{width:'100%',maxWidth:'420px',padding:'0 24px'}}>
+<div style={{textAlign:'center',marginBottom:'32px'}}>
+<div style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:'64px',height:'64px',borderRadius:'16px',background:'linear-gradient(135deg, #e94560, #0f3460)',marginBottom:'16px'}}>
+<span style={{color:'white',fontSize:'24px',fontWeight:'bold'}}>FL</span>
 </div>
-<h1 className="text-4xl font-bold text-white mb-2">FlipLogic</h1>
-<p className="text-blue-300">Vehicle Appraisal Platform</p>
+<h1 style={{fontSize:'36px',fontWeight:'bold',color:'white',margin:'0 0 8px 0'}}>FlipLogic</h1>
+<p style={{color:'#93c5fd',margin:0}}>Vehicle Appraisal Platform</p>
 </div>
-<div className="bg-white bg-opacity-10 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white border-opacity-20">
-<h2 className="text-xl font-semibold text-white mb-6">Welcome back</h2>
-{error && (
-<div className="bg-red-500 bg-opacity-20 border border-red-500 border-opacity-50 rounded-lg p-3 mb-4">
-<p className="text-red-300 text-sm">{error}</p>
+<div style={{background:'rgba(255,255,255,0.1)',backdropFilter:'blur(10px)',borderRadius:'24px',padding:'32px',border:'1px solid rgba(255,255,255,0.2)'}}>
+<h2 style={{color:'white',fontSize:'20px',fontWeight:'600',marginBottom:'24px'}}>Welcome back</h2>
+{error && <div style={{background:'rgba(239,68,68,0.2)',border:'1px solid rgba(239,68,68,0.5)',borderRadius:'8px',padding:'12px',marginBottom:'16px'}}><p style={{color:'#fca5a5',margin:0,fontSize:'14px'}}>{error}</p></div>}
+<form onSubmit={handleLogin}>
+<div style={{marginBottom:'16px'}}>
+<label style={{display:'block',color:'#bfdbfe',fontSize:'14px',fontWeight:'500',marginBottom:'8px'}}>Email</label>
+<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="dealer@example.com" required style={{width:'100%',background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.2)',borderRadius:'12px',padding:'12px 16px',color:'white',fontSize:'16px',outline:'none',boxSizing:'border-box'}} />
 </div>
-)}
-<form onSubmit={handleLogin} className="space-y-4">
-<div>
-<label className="block text-blue-200 text-sm font-medium mb-2">Email</label>
-<input
-type="email"
-value={email}
-onChange={(e) => setEmail(e.target.value)}
-className="w-full bg-white bg-opacity-10 border border-white border-opacity-20 rounded-xl px-4 py-3 text-white placeholder-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-400"
-placeholder="dealer@example.com"
-required
-/>
+<div style={{marginBottom:'24px'}}>
+<label style={{display:'block',color:'#bfdbfe',fontSize:'14px',fontWeight:'500',marginBottom:'8px'}}>Password</label>
+<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required style={{width:'100%',background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.2)',borderRadius:'12px',padding:'12px 16px',color:'white',fontSize:'16px',outline:'none',boxSizing:'border-box'}} />
 </div>
-<div>
-<label className="block text-blue-200 text-sm font-medium mb-2">Password</label>
-<input
-type="password"
-value={password}
-onChange={(e) => setPassword(e.target.value)}
-className="w-full bg-white bg-opacity-10 border border-white border-opacity-20 rounded-xl px-4 py-3 text-white placeholder-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-400"
-placeholder="••••••••"
-required
-/>
-</div>
-<button
-type="submit"
-disabled={loading}
-className="w-full py-3 rounded-xl font-semibold text-white mt-2 transition-all"
-style={{background: 'linear-gradient(135deg, #e94560, #0f3460)'}}
->
+<button type="submit" disabled={loading} style={{width:'100%',padding:'14px',borderRadius:'12px',border:'none',background:'linear-gradient(135deg, #e94560, #0f3460)',color:'white',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>
 {loading ? 'Signing in...' : 'Sign In'}
 </button>
 </form>
 </div>
-<p className="text-center text-blue-400 text-sm mt-6">© 2026 FlipLogic. All rights reserved.</p>
+<p style={{textAlign:'center',color:'#60a5fa',fontSize:'14px',marginTop:'24px'}}>© 2026 FlipLogic. All rights reserved.</p>
 </div>
 </div>
 );
