@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 export default function LoginPage() {
 const router = useRouter();
@@ -20,46 +21,109 @@ method: 'POST',
 headers: { 'Content-Type': 'application/json' },
 body: JSON.stringify({ email, password }),
 });
-if (res.ok) {
+const data = await res.json();
+if (!res.ok) throw new Error(data.error || 'Sign in failed');
 router.push('/dashboard');
-} else {
-setError('Invalid email or password');
-}
-} catch {
-setError('Connection error. Please try again.');
+} catch (err: any) {
+setError(err.message);
 } finally {
 setLoading(false);
 }
 };
 
 return (
-<div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)'}}>
-<div style={{width:'100%',maxWidth:'420px',padding:'0 24px'}}>
-<div style={{textAlign:'center',marginBottom:'32px'}}>
-<div style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:'64px',height:'64px',borderRadius:'16px',background:'linear-gradient(135deg, #e94560, #0f3460)',marginBottom:'16px'}}>
-<span style={{color:'white',fontSize:'24px',fontWeight:'bold'}}>FL</span>
+<div style={{
+minHeight: '100vh', display: 'flex',
+alignItems: 'center', justifyContent: 'center',
+padding: '16px',
+background: 'linear-gradient(135deg, #EEF2FF 0%, #ffffff 50%, #ECFDF5 100%)',
+position: 'relative', overflow: 'hidden',
+}}>
+<div style={{
+position: 'absolute', top: '-80px', right: '-80px',
+width: '320px', height: '320px', borderRadius: '50%',
+background: '#0D3A6B', opacity: 0.07,
+}} />
+<div style={{
+position: 'absolute', bottom: '-80px', left: '-80px',
+width: '320px', height: '320px', borderRadius: '50%',
+background: '#00875A', opacity: 0.07,
+}} />
+<div style={{
+position: 'relative', zIndex: 10,
+width: '100%', maxWidth: '420px',
+background: 'white', borderRadius: '20px',
+boxShadow: '0 20px 60px rgba(13,58,107,0.12)',
+padding: '40px 36px',
+}}>
+<div style={{ textAlign: 'center', marginBottom: '32px' }}>
+<img src="/fliplogic-mark.png" alt="FlipLogic"
+style={{ width: '72px', height: '72px', margin: '0 auto 16px' }} />
+<h1 style={{ fontSize: '28px', fontWeight: '700', color: '#0D3A6B', margin: '0 0 4px' }}>
+FlipLogic
+</h1>
+<p style={{ color: '#6B7280', fontSize: '14px', margin: 0 }}>
+Vehicle Appraisal Platform
+</p>
 </div>
-<h1 style={{fontSize:'36px',fontWeight:'bold',color:'white',margin:'0 0 8px 0'}}>FlipLogic</h1>
-<p style={{color:'#93c5fd',margin:0}}>Vehicle Appraisal Platform</p>
+<h2 style={{ fontSize: '20px', fontWeight: '600', color: '#111827', marginBottom: '6px' }}>
+Welcome back
+</h2>
+<p style={{ color: '#6B7280', fontSize: '14px', marginBottom: '24px' }}>
+Sign in to access your appraisals
+</p>
+{error && (
+<div style={{
+background: '#FEF2F2', border: '1px solid #FECACA',
+borderRadius: '10px', padding: '12px 16px',
+marginBottom: '16px', color: '#DC2626', fontSize: '14px',
+}}>
+{error}
 </div>
-<div style={{background:'rgba(255,255,255,0.1)',backdropFilter:'blur(10px)',borderRadius:'24px',padding:'32px',border:'1px solid rgba(255,255,255,0.2)'}}>
-<h2 style={{color:'white',fontSize:'20px',fontWeight:'600',marginBottom:'24px'}}>Welcome back</h2>
-{error && <div style={{background:'rgba(239,68,68,0.2)',border:'1px solid rgba(239,68,68,0.5)',borderRadius:'8px',padding:'12px',marginBottom:'16px'}}><p style={{color:'#fca5a5',margin:0,fontSize:'14px'}}>{error}</p></div>}
-<form onSubmit={handleLogin}>
-<div style={{marginBottom:'16px'}}>
-<label style={{display:'block',color:'#bfdbfe',fontSize:'14px',fontWeight:'500',marginBottom:'8px'}}>Email</label>
-<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="dealer@example.com" required style={{width:'100%',background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.2)',borderRadius:'12px',padding:'12px 16px',color:'white',fontSize:'16px',outline:'none',boxSizing:'border-box'}} />
+)}
+<form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+<div>
+<label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>
+Email
+</label>
+<input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+placeholder="dealer@example.com" required
+style={{ width: '100%', padding: '12px 14px', border: '1.5px solid #D1D5DB',
+borderRadius: '10px', fontSize: '15px', color: '#111827',
+outline: 'none', boxSizing: 'border-box' }}
+onFocus={(e) => e.target.style.borderColor = '#0D3A6B'}
+onBlur={(e) => e.target.style.borderColor = '#D1D5DB'} />
 </div>
-<div style={{marginBottom:'24px'}}>
-<label style={{display:'block',color:'#bfdbfe',fontSize:'14px',fontWeight:'500',marginBottom:'8px'}}>Password</label>
-<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required style={{width:'100%',background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.2)',borderRadius:'12px',padding:'12px 16px',color:'white',fontSize:'16px',outline:'none',boxSizing:'border-box'}} />
+<div>
+<label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>
+Password
+</label>
+<input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+placeholder="••••••••" required
+style={{ width: '100%', padding: '12px 14px', border: '1.5px solid #D1D5DB',
+borderRadius: '10px', fontSize: '15px', color: '#111827',
+outline: 'none', boxSizing: 'border-box' }}
+onFocus={(e) => e.target.style.borderColor = '#0D3A6B'}
+onBlur={(e) => e.target.style.borderColor = '#D1D5DB'} />
 </div>
-<button type="submit" disabled={loading} style={{width:'100%',padding:'14px',borderRadius:'12px',border:'none',background:'linear-gradient(135deg, #e94560, #0f3460)',color:'white',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>
+<button type="submit" disabled={loading}
+style={{ width: '100%', padding: '13px',
+background: loading ? '#6B8FAF' : '#0D3A6B',
+color: 'white', border: 'none', borderRadius: '10px',
+fontSize: '16px', fontWeight: '600',
+cursor: loading ? 'not-allowed' : 'pointer', marginTop: '4px' }}>
 {loading ? 'Signing in...' : 'Sign In'}
 </button>
 </form>
-</div>
-<p style={{textAlign:'center',color:'#60a5fa',fontSize:'14px',marginTop:'24px'}}>© 2026 FlipLogic. All rights reserved.</p>
+<p style={{ textAlign: 'center', marginTop: '24px', fontSize: '14px', color: '#6B7280' }}>
+Don't have an account?{' '}
+<Link href="/register" style={{ color: '#00875A', fontWeight: '600', textDecoration: 'none' }}>
+Create Account
+</Link>
+</p>
+<p style={{ textAlign: 'center', color: '#9CA3AF', fontSize: '12px', marginTop: '20px', marginBottom: 0 }}>
+© 2026 FlipLogic. All rights reserved.
+</p>
 </div>
 </div>
 );
