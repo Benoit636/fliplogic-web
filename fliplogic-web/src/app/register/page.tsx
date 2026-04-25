@@ -93,7 +93,7 @@ boxShadow: '0 20px 60px rgba(13,58,107,0.12)',
 padding: '40px 36px',
 }}>
 <div style={{ textAlign: 'center', marginBottom: '28px' }}>
-<img src="/fliplogic-mark.png" alt="FlipLogic"
+<img src="/fliplogic-mark (1).png" alt="FlipLogic"
 style={{ width: '64px', height: '64px', margin: '0 auto 12px' }} />
 <h1 style={{ fontSize: '26px', fontWeight: '700', color: '#0D3A6B', margin: '0 0 4px' }}>
 FlipLogic
