@@ -1,4 +1,5 @@
 'use client';
+
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -10,160 +11,224 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async () => {
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault(); // CRITICAL: stops the browser from doing a native form submit / page reload
+    setError('');
+
     if (!email || !password) {
-      setError('Please enter email and password');
+      setError('Please enter your email and password.');
       return;
     }
 
     const apiUrl = process.env.NEXT_PUBLIC_API_URL;
     if (!apiUrl) {
       setError('Configuration error: API URL is not set. Contact support.');
-      console.error('NEXT_PUBLIC_API_URL is undefined');
       return;
     }
 
-    setError('');
     setLoading(true);
-
     try {
-      console.log('Sending login request to:', `${apiUrl}/api/auth/login`);
-
       const res = await fetch(`${apiUrl}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await res.json();
+      // Try to parse JSON regardless of status, so we can show backend error messages
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        // ignore non-JSON bodies
+      }
 
       if (!res.ok) {
-        throw new Error(data.error || `Sign in failed (${res.status})`);
+        const msg =
+          (data && (data.message || data.error)) ||
+          (res.status === 401
+            ? 'Invalid email or password.'
+            : `Login failed (status ${res.status}).`);
+        setError(msg);
+        return;
       }
 
-      if (data.token) {
-        localStorage.setItem('token', data.token);
-        router.push('/dashboard');
-      } else {
-        throw new Error('No token received from server');
+      // Save the auth token if the backend returns one
+      if (data?.token) {
+        try {
+          localStorage.setItem('fliplogic_token', data.token);
+        } catch {
+          // localStorage might be blocked in some browsers; not fatal
+        }
       }
+
+      // Redirect to the dashboard on success
+      router.push('/dashboard');
     } catch (err: any) {
-      console.error('Login error:', err);
-      setError(err.message || 'Something went wrong. Please try again.');
+      setError(
+        err?.message
+          ? `Network error: ${err.message}`
+          : 'Network error. Please check your connection and try again.'
+      );
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') handleSubmit();
-  };
+  }
 
   return (
-    <div style={{
-      minHeight: '100vh', display: 'flex',
-      alignItems: 'center', justifyContent: 'center',
-      padding: '16px',
-      background: 'linear-gradient(135deg, #EEF2FF 0%, #ffffff 50%, #ECFDF5 100%)',
-    }}>
-      <div style={{
-        width: '100%', maxWidth: '420px',
-        background: 'white', borderRadius: '20px',
-        boxShadow: '0 20px 60px rgba(13,58,107,0.12)',
-        padding: '40px 36px',
-      }}>
-        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <img src="/fliplogic-mark (1).png" alt="FlipLogic"
-            style={{ width: '72px', height: '72px', margin: '0 auto 16px' }} />
-          <h1 style={{ fontSize: '28px', fontWeight: '700', color: '#0D3A6B', margin: '0 0 4px' }}>
-            FlipLogic
-          </h1>
-          <p style={{ color: '#6B7280', fontSize: '14px', margin: 0 }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#f7f8fa',
+        padding: '24px',
+      }}
+    >
+      <div
+        style={{
+          width: '100%',
+          maxWidth: 440,
+          background: 'white',
+          borderRadius: 12,
+          padding: '40px 32px',
+          boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
+        }}
+      >
+        <div style={{ textAlign: 'center', marginBottom: 24 }}>
+          <div
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: '50%',
+              border: '3px solid #1e3a5f',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 16,
+            }}
+          >
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M5 12l5 5L20 7"
+                stroke="#22c55e"
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+          <h1 style={{ margin: 0, color: '#1e3a5f', fontSize: 28 }}>FlipLogic</h1>
+          <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: 14 }}>
             Vehicle Appraisal Platform
           </p>
         </div>
 
-        <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#111827', marginBottom: '6px' }}>
-          Welcome back
-        </h2>
-        <p style={{ color: '#6B7280', fontSize: '14px', marginBottom: '24px' }}>
+        <h2 style={{ margin: '0 0 4px', fontSize: 22, color: '#0f172a' }}>Welcome back</h2>
+        <p style={{ margin: '0 0 24px', color: '#64748b', fontSize: 14 }}>
           Sign in to access your appraisals
         </p>
 
-        {error && (
-          <div style={{
-            background: '#FEF2F2', border: '1px solid #FECACA',
-            borderRadius: '10px', padding: '12px 16px',
-            marginBottom: '16px', color: '#DC2626', fontSize: '14px',
-          }}>
-            {error}
-          </div>
-        )}
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div>
-            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>
-              Email
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="dealer@example.com"
-              style={{
-                width: '100%', padding: '12px 14px',
-                border: '1.5px solid #D1D5DB', borderRadius: '10px',
-                fontSize: '15px', color: '#111827',
-                outline: 'none', boxSizing: 'border-box',
-              }}
-            />
-          </div>
-
-          <div>
-            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>
-              Password
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="••••••••"
-              style={{
-                width: '100%', padding: '12px 14px',
-                border: '1.5px solid #D1D5DB', borderRadius: '10px',
-                fontSize: '15px', color: '#111827',
-                outline: 'none', boxSizing: 'border-box',
-              }}
-            />
-          </div>
-
-          <button
-            onClick={handleSubmit}
-            disabled={loading}
+        {/* The onSubmit handler is what makes the form work. e.preventDefault() inside
+            handleSubmit stops the browser from reloading the page. */}
+        <form onSubmit={handleSubmit} noValidate>
+          <label
             style={{
-              width: '100%', padding: '13px',
-              background: loading ? '#6B8FAF' : '#0D3A6B',
-              color: 'white', border: 'none',
-              borderRadius: '10px', fontSize: '16px',
-              fontWeight: '600', cursor: loading ? 'not-allowed' : 'pointer',
-              marginTop: '4px',
+              display: 'block',
+              fontSize: 14,
+              fontWeight: 500,
+              color: '#0f172a',
+              marginBottom: 6,
             }}
           >
-            {loading ? 'Signing in...' : 'Sign In'}
-          </button>
-        </div>
+            Email
+          </label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="dealer@example.com"
+            autoComplete="email"
+            disabled={loading}
+            style={{
+              width: '100%',
+              padding: '12px 14px',
+              borderRadius: 8,
+              border: '1px solid #d1d5db',
+              fontSize: 15,
+              marginBottom: 16,
+              boxSizing: 'border-box',
+            }}
+          />
 
-        <p style={{ textAlign: 'center', marginTop: '24px', fontSize: '14px', color: '#6B7280' }}>
+          <label
+            style={{
+              display: 'block',
+              fontSize: 14,
+              fontWeight: 500,
+              color: '#0f172a',
+              marginBottom: 6,
+            }}
+          >
+            Password
+          </label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+            disabled={loading}
+            style={{
+              width: '100%',
+              padding: '12px 14px',
+              borderRadius: 8,
+              border: '1px solid #d1d5db',
+              fontSize: 15,
+              marginBottom: 16,
+              boxSizing: 'border-box',
+            }}
+          />
+
+          {error && (
+            <div
+              style={{
+                background: '#fef2f2',
+                color: '#b91c1c',
+                border: '1px solid #fecaca',
+                borderRadius: 8,
+                padding: '10px 12px',
+                fontSize: 14,
+                marginBottom: 16,
+              }}
+            >
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              width: '100%',
+              padding: '14px',
+              borderRadius: 8,
+              border: 'none',
+              background: loading ? '#64748b' : '#1e3a5f',
+              color: 'white',
+              fontSize: 16,
+              fontWeight: 600,
+              cursor: loading ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {loading ? 'Signing in…' : 'Sign In'}
+          </button>
+        </form>
+
+        <p style={{ marginTop: 20, textAlign: 'center', fontSize: 14, color: '#64748b' }}>
           Don&apos;t have an account?{' '}
-          <Link href="/register" style={{ color: '#00875A', fontWeight: '600', textDecoration: 'none' }}>
+          <Link href="/register" style={{ color: '#1e3a5f', fontWeight: 600 }}>
             Create Account
           </Link>
-        </p>
-
-        <p style={{ textAlign: 'center', color: '#9CA3AF', fontSize: '12px', marginTop: '20px', marginBottom: 0 }}>
-          © 2026 FlipLogic. All rights reserved.
         </p>
       </div>
     </div>
