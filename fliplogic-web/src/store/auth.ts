@@ -1,45 +1,69 @@
 import { create } from 'zustand';
-import { User } from 'firebase/auth';
 
 export interface AuthUser {
-  id: string;
-  email: string;
-  displayName?: string;
-  subscriptionStatus: 'trial' | 'active' | 'cancelled' | 'expired';
-  trialEndsAt?: string;
+id: string;
+email: string;
+displayName?: string;
+firstName?: string;
+lastName?: string;
+dealershipName?: string;
+subscriptionStatus: 'trial' | 'active' | 'cancelled' | 'expired';
+trialEndsAt?: string;
 }
 
 interface AuthState {
-  firebaseUser: User | null;
-  authUser: AuthUser | null;
-  token: string | null;
-  isLoading: boolean;
-  error: string | null;
-
-  setFirebaseUser: (user: User | null) => void;
-  setAuthUser: (user: AuthUser | null) => void;
-  setToken: (token: string | null) => void;
-  setLoading: (loading: boolean) => void;
-  setError: (error: string | null) => void;
-  logout: () => void;
+authUser: AuthUser | null;
+token: string | null;
+isLoading: boolean;
+error: string | null;
+setAuthUser: (user: AuthUser | null) => void;
+setToken: (token: string | null) => void;
+setLoading: (loading: boolean) => void;
+setError: (error: string | null) => void;
+login: (token: string, user: AuthUser) => void;
+logout: () => void;
+hydrate: () => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
-  firebaseUser: null,
-  authUser: null,
-  token: null,
-  isLoading: false,
-  error: null,
+authUser: null,
+token: null,
+isLoading: false,
+error: null,
 
-  setFirebaseUser: (user) => set({ firebaseUser: user }),
-  setAuthUser: (user) => set({ authUser: user }),
-  setToken: (token) => set({ token }),
-  setLoading: (isLoading) => set({ isLoading }),
-  setError: (error) => set({ error }),
-  logout: () => set({
-    firebaseUser: null,
-    authUser: null,
-    token: null,
-    error: null,
-  }),
+setAuthUser: (user) => set({ authUser: user }),
+setToken: (token) => set({ token }),
+setLoading: (isLoading) => set({ isLoading }),
+setError: (error) => set({ error }),
+
+login: (token, user) => {
+if (typeof window !== 'undefined') {
+localStorage.setItem('fliplogic_token', token);
+localStorage.setItem('fliplogic_user', JSON.stringify(user));
+}
+set({ token, authUser: user, error: null });
+},
+
+logout: () => {
+if (typeof window !== 'undefined') {
+localStorage.removeItem('fliplogic_token');
+localStorage.removeItem('fliplogic_user');
+}
+set({ authUser: null, token: null, error: null });
+},
+
+hydrate: () => {
+if (typeof window === 'undefined') return;
+const token = localStorage.getItem('fliplogic_token');
+const userJson = localStorage.getItem('fliplogic_user');
+if (token && userJson) {
+try {
+const user = JSON.parse(userJson) as AuthUser;
+set({ token, authUser: user });
+} catch {
+localStorage.removeItem('fliplogic_token');
+localStorage.removeItem('fliplogic_user');
+}
+}
+},
 }));
