@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useAuthStore } from '@/store/auth'
 
 export default function LoginPage() {
 const router = useRouter()
@@ -34,7 +35,7 @@ return
 const data = await res.json()
 
 // Store the token however your app expects (adjust key name if needed)
-localStorage.setItem('fliplogic_token', data.token ?? data.access_token ?? '')
+useAuthStore.getState().login(data.token, data.user)
 
 router.push('/dashboard')
 } catch (err) {
