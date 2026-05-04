@@ -9,14 +9,18 @@ import { Card } from '@/components/Card';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { authUser, firebaseUser } = useAuthStore();
+  const { authUser, hydrate } = useAuthStore();
 
-  useEffect(() => {
+useEffect(() => {
+    hydrate();
+  }, [hydrate]); 
+
+ useEffect(() => {
     // Redirect to login if not authenticated
-    if (!authUser || !firebaseUser) {
+  if (!authUser) {
       router.push('/login');
     }
-  }, [authUser, firebaseUser, router]);
+  }, [authUser, router]);
 
   if (!authUser) return null;
 
