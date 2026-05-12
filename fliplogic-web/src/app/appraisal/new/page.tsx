@@ -61,7 +61,7 @@ export default function NewAppraisalPage() {
 
       // Step 1: Create appraisal
       if (step === 1) {
-        const response = await apiClient.post('/appraisals', {
+        const response = await apiClient.post('/api/appraisals', {
           vin: data.vin,
           appraisalType: data.appraisalType,
           searchRadiusKm: data.searchRadiusKm,
@@ -83,7 +83,7 @@ export default function NewAppraisalPage() {
 
       // Step 2: Analyze appraisal
       if (step === 2 && appraisalId) {
-        const response = await apiClient.post(`/appraisals/${appraisalId}/analyze`);
+        const response = await apiClient.post(`/api/appraisals/${appraisalId}/analyze`);
         
         // Redirect to results
         router.push(`/appraisal/${appraisalId}/results`);
