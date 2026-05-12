@@ -34,7 +34,7 @@ export default function ResultsPage() {
 
   const fetchResults = async () => {
     try {
-      const response = await apiClient.get(`/appraisals/${appraisalId}`);
+      const response = await apiClient.get(`/api/appraisals/${appraisalId}`);
       // In production, you'd also fetch pricing strategy from the analysis endpoint
       setResults({
         appraisal: response.data,
