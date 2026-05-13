@@ -54,7 +54,23 @@ export default function NewAppraisalPage() {
       router.push('/login');
     }
   }, [authUser, router]);
-
+// Auto-trigger analyze step when appraisal is created
+  useEffect(() => {
+    if (step === 2 && appraisalId && !isSubmitting) {
+      const analyzeAppraisal = async () => {
+        try {
+          setIsSubmitting(true);
+          await apiClient.post(`/api/appraisals/${appraisalId}/analyze`);
+          router.push(`/appraisal/${appraisalId}/results`);
+        } catch (error: any) {
+          console.error('Analyze error:', error);
+          alert(error.response?.data?.error || 'An error occurred during analysis');
+          setIsSubmitting(false);
+        }
+      };
+      analyzeAppraisal();
+    }
+  }, [step, appraisalId]);
   const onSubmit = async (data: AppraisalFormData) => {
     try {
       setIsSubmitting(true);
