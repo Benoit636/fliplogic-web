@@ -57,14 +57,14 @@ export default function LoginPage() {
           Sign in
         </h2>
         <p className="text-sm text-slate-500 text-center mb-7">
-          Welcome back — let&apos;s appraise some vehicles.
+          Welcome back. Sign in to appraise vehicles.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label
               htmlFor="email"
-              className="block text-xs font-medium text-slate-600 mb-1.5"
+              className="block text-xs font-medium text-slate-600 mb-1"
             >
               Email
             </label>
@@ -75,13 +75,13 @@ export default function LoginPage() {
               autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-lg bg-white text-slate-900 border border-slate-300 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-800 focus:border-blue-800 transition"
+              className="w-full px-3 py-2 rounded-lg bg-white text-slate-900 border border-slate-300 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-800 focus:border-blue-800"
               placeholder="you@dealership.com"
             />
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center justify-between mb-1">
               <label
                 htmlFor="password"
                 className="block text-xs font-medium text-slate-600"
@@ -102,8 +102,8 @@ export default function LoginPage() {
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-lg bg-white text-slate-900 border border-slate-300 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-800 focus:border-blue-800 transition"
-              placeholder="••••••••"
+              className="w-full px-3 py-2 rounded-lg bg-white text-slate-900 border border-slate-300 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-800 focus:border-blue-800"
+              placeholder="Enter your password"
             />
           </div>
 
@@ -114,9 +114,9 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2.5 px-4 bg-blue-800 hover:bg-blue-900 disabled:bg-blue-300 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors duration-200"
+            className="w-full py-2 px-4 bg-blue-800 hover:bg-blue-900 disabled:bg-blue-300 disabled:cursor-not-allowed text-white font-semibold rounded-lg"
           >
-            {loading ? 'Signing in…' : 'Sign in →'}
+            {loading ? 'Signing in...' : 'Sign in'}
           </button>
         </form>
 
