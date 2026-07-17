@@ -2,10 +2,12 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useAuthStore } from '@/store/auth'
 import Image from 'next/image'
 
 export default function LoginPage() {
   const router = useRouter()
+  const login = useAuthStore((state) => state.login)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -23,9 +25,9 @@ export default function LoginPage() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Login failed')
-      localStorage.setItem('token', data.token)
+      login(data.token, data.user)
       router.push('/dashboard')
-    } catch (err: any) {
+      } catch (err: any) {
       setError(err.message)
     } finally {
       setLoading(false)
