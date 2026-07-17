@@ -14,7 +14,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
 
   const handleLogin = async () => {
-    alert('Button clicked!')
+    
     setLoading(true)
     setError('')
     try {
