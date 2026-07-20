@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import AuthProvider from '@/components/AuthProvider';
 
 export const metadata: Metadata = {
   title: 'FlipLogic | Professional Vehicle Appraisal Platform',
@@ -13,9 +14,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="bg-neutral-50 text-neutral-900">
-        {children}
-      </body>
+     <body className="bg-neutral-50 text-neutral-900">
+  <AuthProvider>{children}</AuthProvider>
+</body>
     </html>
   );
 }
