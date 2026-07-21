@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
+import apiClient from '@/lib/api';
 
 export default function ResultsPage() {
   const router = useRouter();
@@ -24,15 +25,10 @@ export default function ResultsPage() {
 
     const fetchResults = async () => {
       try {
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/appraisals/${params.id}/results`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.message || 'Failed to load results');
+        const { data } = await apiClient.get(`/api/appraisals/${params.id}/results`);
         setResults(data);
       } catch (err: any) {
-        setError(err.message || 'Something went wrong');
+        setError(err.response?.data?.message || err.message || 'Something went wrong');
       } finally {
         setLoading(false);
       }

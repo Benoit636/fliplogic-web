@@ -2,9 +2,12 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuthStore } from '@/store/auth';
+import apiClient from '@/lib/api';
 
 export default function RegisterPage() {
   const router = useRouter();
+  const login = useAuthStore((state) => state.login);
   const [form, setForm] = useState({
     dealershipName: '',
     firstName: '',
@@ -19,17 +22,11 @@ export default function RegisterPage() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Registration failed');
-      localStorage.setItem('token', data.token);
+      const { data } = await apiClient.post('/api/auth/register', form);
+      login(data.token, data.user);
       router.push('/dashboard');
     } catch (err: any) {
-      setError(err.message);
+      setError(err.response?.data?.error || err.message || 'Registration failed');
     } finally {
       setLoading(false);
     }
