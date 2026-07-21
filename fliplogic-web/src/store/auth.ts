@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { setAuthToken, clearAuthToken } from '@/lib/api';
 
 export interface AuthUser {
   id: string;
@@ -43,6 +44,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       localStorage.setItem('fliplogic_token', token);
       localStorage.setItem('fliplogic_user', JSON.stringify(user));
     }
+    setAuthToken(token);
     set({ token, authUser: user, error: null });
   },
 
@@ -51,6 +53,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       localStorage.removeItem('fliplogic_token');
       localStorage.removeItem('fliplogic_user');
     }
+    clearAuthToken();
     set({ authUser: null, token: null, error: null });
   },
 
@@ -61,6 +64,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (token && userJson) {
       try {
         const user = JSON.parse(userJson) as AuthUser;
+        setAuthToken(token);
         set({ token, authUser: user, hasHydrated: true });
       } catch {
         localStorage.removeItem('fliplogic_token');

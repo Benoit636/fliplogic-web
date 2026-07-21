@@ -29,7 +29,7 @@ type AppraisalFormData = z.infer<typeof appraisalSchema>;
 
 export default function NewAppraisalPage() {
   const router = useRouter();
-  const { authUser } = useAuthStore();
+  const { authUser, hasHydrated } = useAuthStore();
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [appraisalId, setAppraisalId] = useState<string | null>(null);
@@ -50,10 +50,10 @@ export default function NewAppraisalPage() {
   const appraisalType = watch('appraisalType');
 
   useEffect(() => {
-    if (!authUser) {
+    if (hasHydrated && !authUser) {
       router.push('/login');
     }
-  }, [authUser, router]);
+  }, [hasHydrated, authUser, router]);
 // Auto-trigger analyze step when appraisal is created
   useEffect(() => {
     if (step === 2 && appraisalId && !isSubmitting) {
@@ -112,7 +112,7 @@ export default function NewAppraisalPage() {
     }
   };
 
-  if (!authUser) return null;
+  if (!hasHydrated || !authUser) return null;
 
   return (
     <div className="min-h-screen bg-neutral-50">

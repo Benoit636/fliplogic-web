@@ -3,7 +3,7 @@ import axios, { AxiosInstance } from 'axios';
 let token: string | null = null;
 
 const apiClient: AxiosInstance = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api',
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000',
   timeout: 30000,
 });
 

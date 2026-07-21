@@ -9,20 +9,16 @@ import { Card } from '@/components/Card';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { authUser, hydrate } = useAuthStore();
+  const { authUser, hasHydrated } = useAuthStore();
 
-useEffect(() => {
-    hydrate();
-  }, [hydrate]); 
-
- useEffect(() => {
+  useEffect(() => {
     // Redirect to login if not authenticated
-  if (!authUser) {
+    if (hasHydrated && !authUser) {
       router.push('/login');
     }
-  }, [authUser, router]);
+  }, [hasHydrated, authUser, router]);
 
-  if (!authUser) return null;
+  if (!hasHydrated || !authUser) return null;
 
   return (
     <div className="min-h-screen bg-neutral-50">
