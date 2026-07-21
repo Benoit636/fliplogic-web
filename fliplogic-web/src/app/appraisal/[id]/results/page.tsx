@@ -25,7 +25,7 @@ export default function ResultsPage() {
 
     const fetchResults = async () => {
       try {
-        const { data } = await apiClient.get(`/api/appraisals/${params.id}/results`);
+        const { data } = await apiClient.get(`/api/appraisals/${params.id}`);
         setResults(data);
       } catch (err: any) {
         setError(err.response?.data?.message || err.message || 'Something went wrong');
