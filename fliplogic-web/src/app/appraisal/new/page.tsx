@@ -13,6 +13,10 @@ import { Card } from '@/components/Card';
 
 const appraisalSchema = z.object({
   vin: z.string().length(17, 'VIN must be exactly 17 characters'),
+  mileage: z
+    .number({ invalid_type_error: 'Enter the current mileage' })
+    .min(0, 'Mileage must be 0 or greater')
+    .max(999999, 'Enter a valid mileage'),
 });
 
 type AppraisalFormData = z.infer<typeof appraisalSchema>;
@@ -62,6 +66,7 @@ export default function NewAppraisalPage() {
 
       const response = await apiClient.post('/api/appraisals', {
         vin: data.vin,
+        mileage: data.mileage,
         appraisalType: 'on-site',
         searchRadiusKm: 400,
       });
@@ -106,8 +111,21 @@ export default function NewAppraisalPage() {
                 autoFocus
                 className="text-lg tracking-wide"
               />
-              <p className="text-xs text-neutral-500 mt-2 mb-8">
+              <p className="text-xs text-neutral-500 mt-2 mb-6">
                 17-character VIN, found on the dashboard, door jamb, or registration
+              </p>
+
+              <Input
+                {...register('mileage', { valueAsNumber: true })}
+                type="number"
+                label="Current Mileage (km)"
+                placeholder="e.g., 62000"
+                error={errors.mileage?.message}
+                min={0}
+                className="text-lg"
+              />
+              <p className="text-xs text-neutral-500 mt-2 mb-8">
+                Used to find comparable listings at a similar mileage
               </p>
 
               <Button
