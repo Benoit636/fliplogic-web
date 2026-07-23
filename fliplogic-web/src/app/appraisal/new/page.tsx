@@ -48,7 +48,12 @@ export default function NewAppraisalPage() {
       const analyzeAppraisal = async () => {
         try {
           setIsSubmitting(true);
-          await apiClient.post(`/api/appraisals/${appraisalId}/analyze`);
+          // Scraping comparables can legitimately take well over the
+          // client's default 30s timeout, especially across retries —
+          // give this specific request more room before giving up.
+          await apiClient.post(`/api/appraisals/${appraisalId}/analyze`, undefined, {
+            timeout: 150000,
+          });
           router.push(`/appraisal/${appraisalId}/results`);
         } catch (error: any) {
           console.error('Analyze error:', error);
@@ -155,7 +160,7 @@ export default function NewAppraisalPage() {
                 Analyzing Your Appraisal
               </h3>
               <p className="text-neutral-600 max-w-md mx-auto">
-                We're decoding the VIN, scraping market data, and calculating your pricing strategy. This usually takes 15-30 seconds.
+                We're decoding the VIN, scraping market data, and calculating your pricing strategy. This usually takes 15-30 seconds, but can take a couple of minutes if comparables are hard to find.
               </p>
             </div>
 
