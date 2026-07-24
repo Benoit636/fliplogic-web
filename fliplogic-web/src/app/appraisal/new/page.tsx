@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -10,6 +11,7 @@ import apiClient from '@/lib/api';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
 import { Card } from '@/components/Card';
+import { Logo } from '@/components/Logo';
 
 const appraisalSchema = z.object({
   vin: z.string().length(17, 'VIN must be exactly 17 characters'),
@@ -93,6 +95,9 @@ export default function NewAppraisalPage() {
       {/* Header */}
       <header className="bg-white border-b border-neutral-200">
         <div className="max-w-2xl mx-auto px-4 py-6">
+          <Link href="/dashboard" className="inline-block mb-3">
+            <Logo height={32} />
+          </Link>
           <h1 className="font-display text-2xl font-bold text-primary-900">
             New Appraisal
           </h1>

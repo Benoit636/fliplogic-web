@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/auth'
 import apiClient from '@/lib/api'
-import Image from 'next/image'
+import { Logo } from '@/components/Logo'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -33,7 +33,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-lg w-full max-w-md p-8">
         <div className="flex justify-center mb-6">
-          <Image src="/fliplogic_logo.png" alt="FlipLogic" width={180} height={60} />
+          <Logo height={100} priority />
         </div>
         <h1 className="text-2xl font-bold text-gray-900 text-center mb-2">Sign in</h1>
         <p className="text-gray-500 text-center text-sm mb-6">Welcome back. Sign in to appraise vehicles.</p>

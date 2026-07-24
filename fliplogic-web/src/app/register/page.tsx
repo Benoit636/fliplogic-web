@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
 import apiClient from '@/lib/api';
+import { Logo } from '@/components/Logo';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -35,6 +36,9 @@ export default function RegisterPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-lg w-full max-w-md p-8">
+        <div className="flex justify-center mb-6">
+          <Logo height={100} priority />
+        </div>
         <h1 className="text-2xl font-bold text-gray-900 text-center mb-2">Create your account</h1>
         <p className="text-gray-500 text-center text-sm mb-6">Get started with FlipLogic today</p>
         {error && <p className="text-red-500 text-sm mb-4 text-center">{error}</p>}
