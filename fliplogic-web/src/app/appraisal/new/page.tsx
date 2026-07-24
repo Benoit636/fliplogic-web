@@ -17,6 +17,15 @@ const appraisalSchema = z.object({
     .number({ invalid_type_error: 'Enter the current mileage' })
     .min(0, 'Mileage must be 0 or greater')
     .max(999999, 'Enter a valid mileage'),
+  reconCostEstimate: z.preprocess((val) => {
+    if (val === '' || val === undefined || val === null) return undefined;
+    const num = typeof val === 'string' ? Number(val) : val;
+    return typeof num === 'number' && Number.isNaN(num) ? undefined : num;
+  }, z
+    .number({ invalid_type_error: 'Enter a valid recon cost' })
+    .min(0, 'Recon cost must be 0 or greater')
+    .max(999999, 'Enter a valid recon cost')
+    .optional()),
 });
 
 type AppraisalFormData = z.infer<typeof appraisalSchema>;
@@ -72,6 +81,7 @@ export default function NewAppraisalPage() {
       const response = await apiClient.post('/api/appraisals', {
         vin: data.vin,
         mileage: data.mileage,
+        customReconCost: data.reconCostEstimate,
         appraisalType: 'on-site',
         searchRadiusKm: 400,
       });
@@ -129,8 +139,21 @@ export default function NewAppraisalPage() {
                 min={0}
                 className="text-lg"
               />
-              <p className="text-xs text-neutral-500 mt-2 mb-8">
+              <p className="text-xs text-neutral-500 mt-2 mb-6">
                 Used to find comparable listings at a similar mileage
+              </p>
+
+              <Input
+                {...register('reconCostEstimate')}
+                type="number"
+                label="Recon Cost Estimate ($)"
+                placeholder="e.g., 1500"
+                error={errors.reconCostEstimate?.message}
+                min={0}
+                className="text-lg"
+              />
+              <p className="text-xs text-neutral-500 mt-2 mb-8">
+                Estimated cost to get this vehicle sale-ready. Leave blank to use a default estimate.
               </p>
 
               <Button
