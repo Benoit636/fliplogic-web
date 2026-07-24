@@ -145,7 +145,7 @@ export default function ResultsPage() {
       <header className="bg-white border-b border-neutral-200">
         <div className="max-w-4xl mx-auto px-4 py-6">
           <Link href="/dashboard" className="inline-block mb-4">
-            <Logo height={32} />
+            <Logo height={52} />
           </Link>
           <div className="flex items-center justify-between">
             <div>

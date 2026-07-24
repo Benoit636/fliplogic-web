@@ -96,7 +96,7 @@ export default function NewAppraisalPage() {
       <header className="bg-white border-b border-neutral-200">
         <div className="max-w-2xl mx-auto px-4 py-6">
           <Link href="/dashboard" className="inline-block mb-3">
-            <Logo height={32} />
+            <Logo height={52} />
           </Link>
           <h1 className="font-display text-2xl font-bold text-primary-900">
             New Appraisal

@@ -37,7 +37,7 @@ export default function RegisterPage() {
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-lg w-full max-w-md p-8">
         <div className="flex justify-center mb-6">
-          <Logo height={100} priority />
+          <Logo height={130} priority />
         </div>
         <h1 className="text-2xl font-bold text-gray-900 text-center mb-2">Create your account</h1>
         <p className="text-gray-500 text-center text-sm mb-6">Get started with FlipLogic today</p>
