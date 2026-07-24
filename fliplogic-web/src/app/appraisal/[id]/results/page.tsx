@@ -7,6 +7,7 @@ import { useAuthStore } from '@/store/auth';
 import apiClient from '@/lib/api';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
+import { Logo } from '@/components/Logo';
 
 interface Comparable {
   title: string;
@@ -142,16 +143,21 @@ export default function ResultsPage() {
   return (
     <div className="min-h-screen bg-neutral-50">
       <header className="bg-white border-b border-neutral-200">
-        <div className="max-w-4xl mx-auto px-4 py-6 flex items-center justify-between">
-          <div>
-            <h1 className="font-display text-2xl font-bold text-primary-900">
-              {vehicleTitle}
-            </h1>
-            <p className="text-sm text-neutral-500 mt-1 font-mono">{appraisal.vin}</p>
-          </div>
-          <Link href="/appraisal/new">
-            <Button variant="outline" size="sm">New Appraisal</Button>
+        <div className="max-w-4xl mx-auto px-4 py-6">
+          <Link href="/dashboard" className="inline-block mb-4">
+            <Logo height={32} />
           </Link>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="font-display text-2xl font-bold text-primary-900">
+                {vehicleTitle}
+              </h1>
+              <p className="text-sm text-neutral-500 mt-1 font-mono">{appraisal.vin}</p>
+            </div>
+            <Link href="/appraisal/new">
+              <Button variant="outline" size="sm">New Appraisal</Button>
+            </Link>
+          </div>
         </div>
       </header>
 
