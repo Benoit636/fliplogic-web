@@ -1,6 +1,9 @@
 // Inline SVG so it renders crisp at any size with no raster aspect-ratio
-// math — the viewBox handles scaling natively.
-const VIEWBOX_WIDTH = 400;
+// math — the viewBox handles scaling natively. Sized to hug the actual
+// icon+wordmark content (measured: content ends around x=236) rather than
+// leaving a wide empty margin on the right, which otherwise makes the logo
+// look off-center wherever it's centered as a block (e.g. the login card).
+const VIEWBOX_WIDTH = 240;
 const VIEWBOX_HEIGHT = 100;
 
 interface LogoProps {
@@ -20,6 +23,11 @@ export function Logo({ height = 40, className }: LogoProps) {
       width={width}
       height={height}
       className={className}
+      // Without this, a flex-container parent (e.g. the centered login
+      // card) shrinks the SVG down to fill available width via default
+      // flexbox shrink behavior on replaced elements, squashing it well
+      // below its intended size.
+      style={{ flexShrink: 0 }}
       role="img"
       aria-label="FlipLogic"
     >
