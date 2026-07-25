@@ -23,12 +23,15 @@ export function Logo({ height = 40, className }: LogoProps) {
       role="img"
       aria-label="FlipLogic"
     >
-      <g transform="translate(10,10)">
+      {/* Icon is natively a 160x160 square (two triangles meeting at a
+          shared apex); scaled down to a 90x90 box within this 100-tall
+          canvas. */}
+      <g transform="translate(5,5) scale(0.5625)">
         <path d="M 20,10 L 140,10 L 80,80 Z" fill="#0B3D2E" />
-        <path d="M 20,150 L 140,150 L 80,80 Z" fill="#0B3D2E" transform="scale(1,0.53)" />
+        <path d="M 20,150 L 140,150 L 80,80 Z" fill="#0B3D2E" />
       </g>
       <text
-        x="180"
+        x="110"
         y="62"
         fontFamily="Sora, Helvetica, Arial, sans-serif"
         fontWeight={600}
