@@ -10,8 +10,30 @@ import { useAuthStore } from '@/store/auth';
 import apiClient from '@/lib/api';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
+import { Select } from '@/components/Select';
 import { Card } from '@/components/Card';
 import { Logo } from '@/components/Logo';
+
+// Shared with the backend's condition-based recon cost defaults
+// (excellent/good/average/rough) — see buyDecisionReport.js.
+const CONDITION_OPTIONS = [
+  { value: '', label: 'Not sure / skip' },
+  { value: 'excellent', label: 'Excellent' },
+  { value: 'good', label: 'Good' },
+  { value: 'average', label: 'Average' },
+  { value: 'rough', label: 'Rough' },
+];
+
+const optionalPositiveNumber = (invalidMessage: string) =>
+  z.preprocess((val) => {
+    if (val === '' || val === undefined || val === null) return undefined;
+    const num = typeof val === 'string' ? Number(val) : val;
+    return typeof num === 'number' && Number.isNaN(num) ? undefined : num;
+  }, z
+    .number({ invalid_type_error: invalidMessage })
+    .min(0, `${invalidMessage} (must be 0 or greater)`)
+    .max(999999, `${invalidMessage} (too large)`)
+    .optional());
 
 const appraisalSchema = z.object({
   vin: z.string().length(17, 'VIN must be exactly 17 characters'),
@@ -19,15 +41,9 @@ const appraisalSchema = z.object({
     .number({ invalid_type_error: 'Enter the current mileage' })
     .min(0, 'Mileage must be 0 or greater')
     .max(999999, 'Enter a valid mileage'),
-  reconCostEstimate: z.preprocess((val) => {
-    if (val === '' || val === undefined || val === null) return undefined;
-    const num = typeof val === 'string' ? Number(val) : val;
-    return typeof num === 'number' && Number.isNaN(num) ? undefined : num;
-  }, z
-    .number({ invalid_type_error: 'Enter a valid recon cost' })
-    .min(0, 'Recon cost must be 0 or greater')
-    .max(999999, 'Enter a valid recon cost')
-    .optional()),
+  condition: z.enum(['', 'excellent', 'good', 'average', 'rough']).optional(),
+  reconCostEstimate: optionalPositiveNumber('Enter a valid recon cost'),
+  targetGrossProfit: optionalPositiveNumber('Enter a valid target profit'),
 });
 
 type AppraisalFormData = z.infer<typeof appraisalSchema>;
@@ -83,7 +99,9 @@ export default function NewAppraisalPage() {
       const response = await apiClient.post('/api/appraisals', {
         vin: data.vin,
         mileage: data.mileage,
+        condition: data.condition || undefined,
         customReconCost: data.reconCostEstimate,
+        targetGrossProfit: data.targetGrossProfit,
         appraisalType: 'on-site',
         searchRadiusKm: 400,
       });
@@ -148,6 +166,22 @@ export default function NewAppraisalPage() {
                 Used to find comparable listings at a similar mileage
               </p>
 
+              <Select
+                {...register('condition')}
+                label="Condition"
+                error={errors.condition?.message}
+                className="text-lg"
+              >
+                {CONDITION_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </Select>
+              <p className="text-xs text-neutral-500 mt-2 mb-6">
+                Used to estimate recon cost when you don't enter one below
+              </p>
+
               <Input
                 {...register('reconCostEstimate')}
                 type="number"
@@ -157,8 +191,21 @@ export default function NewAppraisalPage() {
                 min={0}
                 className="text-lg"
               />
+              <p className="text-xs text-neutral-500 mt-2 mb-6">
+                Estimated cost to get this vehicle sale-ready. Leave blank to use a condition-based estimate.
+              </p>
+
+              <Input
+                {...register('targetGrossProfit')}
+                type="number"
+                label="Target Gross Profit ($)"
+                placeholder="e.g., 3000"
+                error={errors.targetGrossProfit?.message}
+                min={0}
+                className="text-lg"
+              />
               <p className="text-xs text-neutral-500 mt-2 mb-8">
-                Estimated cost to get this vehicle sale-ready. Leave blank to use a default estimate.
+                Minimum profit you want on this deal. Leave blank to use $3,000.
               </p>
 
               <Button

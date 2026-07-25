@@ -18,10 +18,50 @@ interface Comparable {
   source: string;
 }
 
-interface PricingTier {
-  price: number;
-  profitMargin: number;
-  profit: number;
+type Verdict = 'Buy' | 'Negotiate' | 'Walk Away';
+type GrossProfitRating = 'Strong' | 'Acceptable' | 'Thin' | 'Negative / Avoid' | 'Unknown';
+type RiskLevel = 'Low' | 'Medium' | 'High';
+
+interface BuyDecisionReport {
+  vehicle: {
+    vin: string;
+    year: number | null;
+    make: string | null;
+    model: string | null;
+    mileage: number | null;
+    condition: string | null;
+  };
+  marketSnapshot: {
+    lowRetail: number | null;
+    avgRetail: number | null;
+    highRetail: number | null;
+    comparablesUsed: number;
+    sufficientData: boolean;
+  };
+  reconEstimate: {
+    amount: number;
+    source: 'manual' | 'estimated';
+    notes: string[];
+  };
+  profitCalculation: {
+    conservativeRetailValue: number | null;
+    targetGrossProfit: number;
+    riskBufferPct: number;
+    riskBuffer: number | null;
+    recommendedMaxBuyPrice: number | null;
+    expectedGrossProfit: number | null;
+    grossProfitRating: GrossProfitRating;
+  };
+  riskAndConfidence: {
+    daysToSellRisk: RiskLevel;
+    confidenceScore: number;
+    confidenceReasons: string[];
+    missingData: string[];
+  };
+  verdict: {
+    decision: Verdict;
+    explanation: string;
+  };
 }
 
 interface AppraisalResults {
@@ -36,18 +76,7 @@ interface AppraisalResults {
     comps_data: Comparable[] | null;
     created_at: string;
   };
-  pricingStrategy: {
-    day0to20: PricingTier;
-    day21to30: PricingTier;
-    day31plus: PricingTier;
-  } | null;
-  analysis: {
-    acquisitionCost: number;
-    reconCost: number;
-    marketValue: number;
-    totalInvestment: number;
-    comparablesAnalyzed: number;
-  } | null;
+  buyDecisionReport: BuyDecisionReport | null;
 }
 
 const currency = new Intl.NumberFormat('en-CA', {
@@ -55,6 +84,49 @@ const currency = new Intl.NumberFormat('en-CA', {
   currency: 'CAD',
   maximumFractionDigits: 0,
 });
+
+const fmt = (n: number | null) => (n == null ? '—' : currency.format(n));
+
+const VERDICT_STYLES: Record<Verdict, { badge: string; card: string; heading: string }> = {
+  Buy: {
+    badge: 'bg-accent-100 text-accent-800',
+    card: 'bg-accent-50 border-accent-200',
+    heading: 'text-accent-800',
+  },
+  Negotiate: {
+    badge: 'bg-amber-100 text-amber-800',
+    card: 'bg-amber-50 border-amber-200',
+    heading: 'text-amber-800',
+  },
+  'Walk Away': {
+    badge: 'bg-danger-100 text-danger-700',
+    card: 'bg-danger-50 border-danger-100',
+    heading: 'text-danger-700',
+  },
+};
+
+const RISK_STYLES: Record<RiskLevel, string> = {
+  Low: 'bg-accent-100 text-accent-800',
+  Medium: 'bg-amber-100 text-amber-800',
+  High: 'bg-danger-100 text-danger-700',
+};
+
+const GROSS_PROFIT_STYLES: Record<GrossProfitRating, string> = {
+  Strong: 'bg-accent-100 text-accent-800',
+  Acceptable: 'bg-accent-100 text-accent-800',
+  Thin: 'bg-amber-100 text-amber-800',
+  'Negative / Avoid': 'bg-danger-100 text-danger-700',
+  Unknown: 'bg-neutral-100 text-neutral-600',
+};
+
+function ConfidenceBar({ score }: { score: number }) {
+  const color = score >= 70 ? 'bg-accent-500' : score >= 40 ? 'bg-amber-500' : 'bg-danger-500';
+  return (
+    <div className="w-full h-2 bg-neutral-200 rounded-full overflow-hidden">
+      <div className={`h-full ${color}`} style={{ width: `${Math.max(0, Math.min(100, score))}%` }} />
+    </div>
+  );
+}
 
 export default function ResultsPage() {
   const router = useRouter();
@@ -111,17 +183,17 @@ export default function ResultsPage() {
 
   if (!results) return null;
 
-  const { appraisal, pricingStrategy, analysis } = results;
+  const { appraisal, buyDecisionReport: report } = results;
   const vehicleTitle = [appraisal.vehicle_year, appraisal.vehicle_make, appraisal.vehicle_model]
     .filter(Boolean)
     .join(' ') || 'Vehicle';
 
-  if (appraisal.status !== 'complete' || !analysis || !pricingStrategy) {
+  if (appraisal.status !== 'complete' || !report) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-neutral-50 px-4">
         <Card className="p-8 max-w-md text-center">
           <h2 className="text-lg font-bold text-neutral-900 mb-2">
-            Analysis not ready yet
+            Report not ready yet
           </h2>
           <p className="text-neutral-600 mb-6">
             This appraisal hasn't finished analyzing. Try submitting it again from the dashboard.
@@ -134,11 +206,7 @@ export default function ResultsPage() {
     );
   }
 
-  const tiers: { key: keyof typeof pricingStrategy; label: string; sub: string; highlight?: boolean }[] = [
-    { key: 'day0to20', label: 'Day 0–20', sub: 'Fast turn', highlight: true },
-    { key: 'day21to30', label: 'Day 21–30', sub: 'Standard' },
-    { key: 'day31plus', label: 'Day 31+', sub: 'Clear it out' },
-  ];
+  const verdictStyle = VERDICT_STYLES[report.verdict.decision];
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -162,68 +230,189 @@ export default function ResultsPage() {
       </header>
 
       <main className="max-w-4xl mx-auto px-4 py-10 space-y-8">
-        {/* Key metrics */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {/* Final Verdict — prominent, at the top */}
+        <Card className={`p-6 border-2 ${verdictStyle.card}`}>
+          <div className="flex items-center gap-3 mb-3">
+            <span className={`inline-flex px-3 py-1 rounded-full text-sm font-bold uppercase tracking-wide ${verdictStyle.badge}`}>
+              {report.verdict.decision}
+            </span>
+            {report.profitCalculation.recommendedMaxBuyPrice != null && (
+              <span className="text-sm text-neutral-500">
+                Recommended max buy price:{' '}
+                <span className="font-semibold text-neutral-900">
+                  {fmt(report.profitCalculation.recommendedMaxBuyPrice)}
+                </span>
+              </span>
+            )}
+          </div>
+          <p className={`text-lg font-medium ${verdictStyle.heading}`}>
+            {report.verdict.explanation}
+          </p>
+        </Card>
+
+        {/* Vehicle Summary */}
+        <div>
+          <h2 className="text-lg font-bold text-neutral-900 mb-4">Vehicle Summary</h2>
           <Card className="p-5">
-            <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">
-              Market Value
-            </p>
-            <p className="text-2xl font-bold text-primary-900">
-              {currency.format(analysis.marketValue)}
-            </p>
-          </Card>
-          <Card className="p-5">
-            <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">
-              Acquisition Cost
-            </p>
-            <p className="text-2xl font-bold text-neutral-900">
-              {currency.format(analysis.acquisitionCost)}
-            </p>
-          </Card>
-          <Card className="p-5">
-            <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">
-              Recon Cost
-            </p>
-            <p className="text-2xl font-bold text-neutral-900">
-              {currency.format(analysis.reconCost)}
-            </p>
-          </Card>
-          <Card className="p-5">
-            <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">
-              Total Investment
-            </p>
-            <p className="text-2xl font-bold text-neutral-900">
-              {currency.format(analysis.totalInvestment)}
-            </p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div>
+                <p className="text-neutral-500">VIN</p>
+                <p className="font-mono text-neutral-900">{report.vehicle.vin}</p>
+              </div>
+              <div>
+                <p className="text-neutral-500">Year / Make / Model</p>
+                <p className="text-neutral-900">
+                  {[report.vehicle.year, report.vehicle.make, report.vehicle.model].filter(Boolean).join(' ') || 'Incomplete'}
+                </p>
+              </div>
+              <div>
+                <p className="text-neutral-500">Mileage</p>
+                <p className="text-neutral-900">
+                  {report.vehicle.mileage != null ? `${report.vehicle.mileage.toLocaleString()} km` : 'Not provided'}
+                </p>
+              </div>
+              <div>
+                <p className="text-neutral-500">Condition</p>
+                <p className="text-neutral-900 capitalize">
+                  {report.vehicle.condition || 'Not provided'}
+                </p>
+              </div>
+            </div>
           </Card>
         </div>
 
-        {/* Pricing strategy */}
+        {/* Market Snapshot */}
         <div>
-          <h2 className="text-lg font-bold text-neutral-900 mb-4">Pricing Strategy</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {tiers.map(({ key, label, sub, highlight }) => {
-              const tier = pricingStrategy[key];
-              return (
-                <Card
-                  key={key}
-                  elevated={highlight}
-                  className={`p-6 ${highlight ? 'border-primary-300 border-2' : ''}`}
-                >
-                  <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide">
-                    {label}
-                  </p>
-                  <p className="text-xs text-neutral-400 mb-3">{sub}</p>
-                  <p className="text-3xl font-bold text-neutral-900 mb-2">
-                    {currency.format(tier.price)}
-                  </p>
-                  <p className="text-sm text-accent-600 font-medium">
-                    +{currency.format(tier.profit)} profit ({(tier.profitMargin * 100).toFixed(0)}%)
-                  </p>
-                </Card>
-              );
-            })}
-          </div>
+          <h2 className="text-lg font-bold text-neutral-900 mb-4">Market Snapshot</h2>
+          <Card className="p-5">
+            {report.marketSnapshot.sufficientData ? (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div>
+                  <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">Low Retail</p>
+                  <p className="text-xl font-bold text-neutral-900">{fmt(report.marketSnapshot.lowRetail)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">Avg Retail</p>
+                  <p className="text-xl font-bold text-neutral-900">{fmt(report.marketSnapshot.avgRetail)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">High Retail</p>
+                  <p className="text-xl font-bold text-neutral-900">{fmt(report.marketSnapshot.highRetail)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">Comparables Used</p>
+                  <p className="text-xl font-bold text-neutral-900">{report.marketSnapshot.comparablesUsed}</p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-danger font-medium">
+                Insufficient market data — no comparable listings were found for this vehicle.
+              </p>
+            )}
+          </Card>
+        </div>
+
+        {/* Recon Estimate */}
+        <div>
+          <h2 className="text-lg font-bold text-neutral-900 mb-4">Recon Estimate</h2>
+          <Card className="p-5">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-2xl font-bold text-neutral-900">{fmt(report.reconEstimate.amount)}</p>
+              <span className="text-xs font-medium px-2 py-1 rounded-full bg-neutral-100 text-neutral-600 uppercase tracking-wide">
+                {report.reconEstimate.source === 'manual' ? 'Manually entered' : 'Estimated'}
+              </span>
+            </div>
+            {report.reconEstimate.notes.length > 0 && (
+              <ul className="text-sm text-neutral-500 list-disc list-inside space-y-0.5 mt-2">
+                {report.reconEstimate.notes.map((note, i) => (
+                  <li key={i}>{note}</li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        </div>
+
+        {/* Profit Calculation */}
+        <div>
+          <h2 className="text-lg font-bold text-neutral-900 mb-4">Profit Calculation</h2>
+          <Card className="p-5">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+              <div>
+                <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">Conservative Retail Value</p>
+                <p className="text-lg font-bold text-neutral-900">{fmt(report.profitCalculation.conservativeRetailValue)}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">Recommended Max Buy Price</p>
+                <p className="text-lg font-bold text-primary-900">{fmt(report.profitCalculation.recommendedMaxBuyPrice)}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">Target Gross Profit</p>
+                <p className="text-lg font-bold text-neutral-900">{fmt(report.profitCalculation.targetGrossProfit)}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">
+                  Risk Buffer ({(report.profitCalculation.riskBufferPct * 100).toFixed(1)}%)
+                </p>
+                <p className="text-lg font-bold text-neutral-900">{fmt(report.profitCalculation.riskBuffer)}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 pt-4 border-t border-neutral-100">
+              <p className="text-sm text-neutral-500">Expected Gross Profit:</p>
+              <p className="text-xl font-bold text-neutral-900">{fmt(report.profitCalculation.expectedGrossProfit)}</p>
+              <span className={`text-xs font-medium px-2 py-1 rounded-full uppercase tracking-wide ${GROSS_PROFIT_STYLES[report.profitCalculation.grossProfitRating]}`}>
+                {report.profitCalculation.grossProfitRating}
+              </span>
+            </div>
+          </Card>
+        </div>
+
+        {/* Risk + Confidence */}
+        <div>
+          <h2 className="text-lg font-bold text-neutral-900 mb-4">Risk &amp; Confidence</h2>
+          <Card className="p-5 space-y-5">
+            <div className="flex items-center gap-3">
+              <p className="text-sm text-neutral-500">Days-to-Sell Risk:</p>
+              <span className={`text-xs font-medium px-2 py-1 rounded-full uppercase tracking-wide ${RISK_STYLES[report.riskAndConfidence.daysToSellRisk]}`}>
+                {report.riskAndConfidence.daysToSellRisk}
+              </span>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm text-neutral-500">Confidence Score</p>
+                <p className="text-sm font-semibold text-neutral-900">
+                  {report.riskAndConfidence.confidenceScore} / 100
+                </p>
+              </div>
+              <ConfidenceBar score={report.riskAndConfidence.confidenceScore} />
+              <ul className="text-sm text-neutral-500 list-disc list-inside space-y-0.5 mt-3">
+                {report.riskAndConfidence.confidenceReasons.map((reason, i) => (
+                  <li key={i}>{reason}</li>
+                ))}
+              </ul>
+            </div>
+
+            {report.riskAndConfidence.missingData.length > 0 && (
+              <div>
+                <p className="text-sm text-neutral-500 mb-1">Missing data</p>
+                <div className="flex flex-wrap gap-2">
+                  {report.riskAndConfidence.missingData.map((item, i) => (
+                    <span key={i} className="text-xs px-2 py-1 rounded-full bg-neutral-100 text-neutral-600">
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Card>
+        </div>
+
+        {/* Recommended Action */}
+        <div>
+          <h2 className="text-lg font-bold text-neutral-900 mb-4">Recommended Action</h2>
+          <Card className={`p-5 border ${verdictStyle.card}`}>
+            <p className={`font-medium ${verdictStyle.heading}`}>{report.verdict.explanation}</p>
+          </Card>
         </div>
 
         {/* Comparables */}
@@ -231,7 +420,7 @@ export default function ResultsPage() {
           <h2 className="text-lg font-bold text-neutral-900 mb-4">
             Comparable Listings
             <span className="text-neutral-400 font-normal text-sm ml-2">
-              ({analysis.comparablesAnalyzed} analyzed)
+              ({report.marketSnapshot.comparablesUsed} analyzed)
             </span>
           </h2>
           <Card className="divide-y divide-neutral-100">
