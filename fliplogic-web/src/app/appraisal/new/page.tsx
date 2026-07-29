@@ -54,6 +54,7 @@ export default function NewAppraisalPage() {
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [appraisalId, setAppraisalId] = useState<string | null>(null);
+  const [profitMode, setProfitMode] = useState<'dollar' | 'percentage'>('dollar');
 
   const {
     register,
@@ -93,6 +94,11 @@ export default function NewAppraisalPage() {
   }, [step, appraisalId]);
 
   const onSubmit = async (data: AppraisalFormData) => {
+    if (profitMode === 'percentage' && data.targetGrossProfit != null && data.targetGrossProfit > 100) {
+      alert('Target gross profit percentage must be 100 or less');
+      return;
+    }
+
     try {
       setIsSubmitting(true);
 
@@ -102,6 +108,7 @@ export default function NewAppraisalPage() {
         condition: data.condition || undefined,
         customReconCost: data.reconCostEstimate,
         targetGrossProfit: data.targetGrossProfit,
+        targetGrossProfitMode: data.targetGrossProfit != null ? profitMode : undefined,
         appraisalType: 'on-site',
         searchRadiusKm: 400,
       });
@@ -195,17 +202,48 @@ export default function NewAppraisalPage() {
                 Estimated cost to get this vehicle sale-ready. Leave blank to use a condition-based estimate.
               </p>
 
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-neutral-700">
+                  Target Gross Profit
+                </label>
+                <div className="inline-flex rounded-md border border-neutral-300 overflow-hidden text-xs font-medium">
+                  <button
+                    type="button"
+                    onClick={() => setProfitMode('dollar')}
+                    className={`px-3 py-1 transition-colors ${
+                      profitMode === 'dollar'
+                        ? 'bg-primary-600 text-white'
+                        : 'bg-white text-neutral-600 hover:bg-neutral-50'
+                    }`}
+                  >
+                    $ Amount
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setProfitMode('percentage')}
+                    className={`px-3 py-1 border-l border-neutral-300 transition-colors ${
+                      profitMode === 'percentage'
+                        ? 'bg-primary-600 text-white'
+                        : 'bg-white text-neutral-600 hover:bg-neutral-50'
+                    }`}
+                  >
+                    % of Value
+                  </button>
+                </div>
+              </div>
               <Input
                 {...register('targetGrossProfit')}
                 type="number"
-                label="Target Gross Profit ($)"
-                placeholder="e.g., 3000"
+                placeholder={profitMode === 'percentage' ? 'e.g., 10' : 'e.g., 3000'}
                 error={errors.targetGrossProfit?.message}
                 min={0}
+                max={profitMode === 'percentage' ? 100 : undefined}
                 className="text-lg"
               />
               <p className="text-xs text-neutral-500 mt-2 mb-8">
-                Minimum profit you want on this deal. Leave blank to use $3,000.
+                {profitMode === 'percentage'
+                  ? "Target profit as a percentage of the vehicle's retail value. Leave blank to use $3,000."
+                  : 'Minimum profit you want on this deal. Leave blank to use $3,000.'}
               </p>
 
               <Button

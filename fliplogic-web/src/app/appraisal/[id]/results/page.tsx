@@ -46,6 +46,8 @@ interface BuyDecisionReport {
   profitCalculation: {
     conservativeRetailValue: number | null;
     targetGrossProfit: number;
+    targetGrossProfitMode: 'dollar' | 'percentage' | 'default';
+    targetGrossProfitPercent: number | null;
     riskBufferPct: number;
     riskBuffer: number | null;
     recommendedMaxBuyPrice: number | null;
@@ -347,7 +349,14 @@ export default function ResultsPage() {
               </div>
               <div>
                 <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">Target Gross Profit</p>
-                <p className="text-lg font-bold text-neutral-900">{fmt(report.profitCalculation.targetGrossProfit)}</p>
+                <p className="text-lg font-bold text-neutral-900">
+                  {fmt(report.profitCalculation.targetGrossProfit)}
+                  {report.profitCalculation.targetGrossProfitMode === 'percentage' && (
+                    <span className="text-sm font-normal text-neutral-500">
+                      {' '}({report.profitCalculation.targetGrossProfitPercent}% of retail value)
+                    </span>
+                  )}
+                </p>
               </div>
               <div>
                 <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">
