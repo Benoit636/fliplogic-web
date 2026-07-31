@@ -28,8 +28,14 @@ interface BuyDecisionReport {
     year: number | null;
     make: string | null;
     model: string | null;
+    trim: string | null;
     mileage: number | null;
     condition: string | null;
+  };
+  appraisalInput: {
+    appraisalToolValue: number | null;
+    notes: string | null;
+    knownRisks: string | null;
   };
   marketSnapshot: {
     lowRetail: number | null;
@@ -37,6 +43,7 @@ interface BuyDecisionReport {
     highRetail: number | null;
     comparablesUsed: number;
     sufficientData: boolean;
+    source: 'manual' | 'scraped';
   };
   reconEstimate: {
     amount: number;
@@ -130,6 +137,15 @@ function ConfidenceBar({ score }: { score: number }) {
   );
 }
 
+function SectionHeading({ number, title }: { number: number; title: string }) {
+  return (
+    <h2 className="text-lg font-bold text-neutral-900 mb-4">
+      <span className="text-neutral-400 font-normal mr-2">{number}.</span>
+      {title}
+    </h2>
+  );
+}
+
 export default function ResultsPage() {
   const router = useRouter();
   const params = useParams();
@@ -209,6 +225,9 @@ export default function ResultsPage() {
   }
 
   const verdictStyle = VERDICT_STYLES[report.verdict.decision];
+  const vehicleSubtitle = [report.vehicle.trim, report.vehicle.mileage != null ? `${report.vehicle.mileage.toLocaleString()} km` : null, report.vehicle.condition]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -223,100 +242,123 @@ export default function ResultsPage() {
                 {vehicleTitle}
               </h1>
               <p className="text-sm text-neutral-500 mt-1 font-mono">{appraisal.vin}</p>
+              {vehicleSubtitle && (
+                <p className="text-sm text-neutral-500 mt-0.5">{vehicleSubtitle}</p>
+              )}
+              {report.appraisalInput.appraisalToolValue != null && (
+                <p className="text-xs text-neutral-400 mt-1">
+                  Appraisal tool value: {fmt(report.appraisalInput.appraisalToolValue)}
+                </p>
+              )}
             </div>
             <Link href="/appraisal/new">
-              <Button variant="outline" size="sm">New Appraisal</Button>
+              <Button variant="outline" size="sm">New Buy Decision</Button>
             </Link>
           </div>
         </div>
       </header>
 
       <main className="max-w-4xl mx-auto px-4 py-10 space-y-8">
-        {/* Final Verdict — prominent, at the top */}
+        {/* Summary strip */}
         <Card className={`p-6 border-2 ${verdictStyle.card}`}>
-          <div className="flex items-center gap-3 mb-3">
-            <span className={`inline-flex px-3 py-1 rounded-full text-sm font-bold uppercase tracking-wide ${verdictStyle.badge}`}>
-              {report.verdict.decision}
-            </span>
-            {report.profitCalculation.recommendedMaxBuyPrice != null && (
-              <span className="text-sm text-neutral-500">
-                Recommended max buy price:{' '}
-                <span className="font-semibold text-neutral-900">
-                  {fmt(report.profitCalculation.recommendedMaxBuyPrice)}
-                </span>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div>
+              <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">Final Verdict</p>
+              <span className={`inline-flex px-3 py-1 rounded-full text-sm font-bold uppercase tracking-wide ${verdictStyle.badge}`}>
+                {report.verdict.decision}
               </span>
-            )}
+            </div>
+            <div>
+              <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">Max Safe Buy Price</p>
+              <p className="text-xl font-bold text-neutral-900">{fmt(report.profitCalculation.recommendedMaxBuyPrice)}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">Expected Gross Profit</p>
+              <p className="text-xl font-bold text-neutral-900">{fmt(report.profitCalculation.expectedGrossProfit)}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">Confidence Score</p>
+              <p className="text-xl font-bold text-neutral-900">{report.riskAndConfidence.confidenceScore} / 100</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">Risk Level</p>
+              <span className={`inline-flex px-3 py-1 rounded-full text-sm font-bold uppercase tracking-wide ${RISK_STYLES[report.riskAndConfidence.daysToSellRisk]}`}>
+                {report.riskAndConfidence.daysToSellRisk}
+              </span>
+            </div>
           </div>
-          <p className={`text-lg font-medium ${verdictStyle.heading}`}>
-            {report.verdict.explanation}
-          </p>
         </Card>
 
-        {/* Vehicle Summary */}
+        {/* 1. Final Recommendation */}
         <div>
-          <h2 className="text-lg font-bold text-neutral-900 mb-4">Vehicle Summary</h2>
+          <SectionHeading number={1} title="Final Recommendation" />
+          <Card className={`p-6 border ${verdictStyle.card}`}>
+            <p className={`text-lg font-medium ${verdictStyle.heading}`}>{report.verdict.explanation}</p>
+          </Card>
+        </div>
+
+        {/* 2. Maximum Buy Number */}
+        <div>
+          <SectionHeading number={2} title="Maximum Buy Number" />
           <Card className="p-5">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <p className="text-3xl font-bold text-primary-900 mb-4">
+              {fmt(report.profitCalculation.recommendedMaxBuyPrice)}
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm pt-4 border-t border-neutral-100">
               <div>
-                <p className="text-neutral-500">VIN</p>
-                <p className="font-mono text-neutral-900">{report.vehicle.vin}</p>
+                <p className="text-neutral-500">Conservative Retail Value</p>
+                <p className="text-neutral-900 font-medium">{fmt(report.profitCalculation.conservativeRetailValue)}</p>
               </div>
               <div>
-                <p className="text-neutral-500">Year / Make / Model</p>
-                <p className="text-neutral-900">
-                  {[report.vehicle.year, report.vehicle.make, report.vehicle.model].filter(Boolean).join(' ') || 'Incomplete'}
-                </p>
+                <p className="text-neutral-500">− Recon Cost</p>
+                <p className="text-neutral-900 font-medium">{fmt(report.reconEstimate.amount)}</p>
               </div>
               <div>
-                <p className="text-neutral-500">Mileage</p>
-                <p className="text-neutral-900">
-                  {report.vehicle.mileage != null ? `${report.vehicle.mileage.toLocaleString()} km` : 'Not provided'}
-                </p>
+                <p className="text-neutral-500">− Target Gross Profit</p>
+                <p className="text-neutral-900 font-medium">{fmt(report.profitCalculation.targetGrossProfit)}</p>
               </div>
               <div>
-                <p className="text-neutral-500">Condition</p>
-                <p className="text-neutral-900 capitalize">
-                  {report.vehicle.condition || 'Not provided'}
-                </p>
+                <p className="text-neutral-500">− Risk Buffer ({(report.profitCalculation.riskBufferPct * 100).toFixed(1)}%)</p>
+                <p className="text-neutral-900 font-medium">{fmt(report.profitCalculation.riskBuffer)}</p>
               </div>
             </div>
           </Card>
         </div>
 
-        {/* Market Snapshot */}
+        {/* 3. Profit Calculation */}
         <div>
-          <h2 className="text-lg font-bold text-neutral-900 mb-4">Market Snapshot</h2>
+          <SectionHeading number={3} title="Profit Calculation" />
           <Card className="p-5">
-            {report.marketSnapshot.sufficientData ? (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div>
-                  <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">Low Retail</p>
-                  <p className="text-xl font-bold text-neutral-900">{fmt(report.marketSnapshot.lowRetail)}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">Avg Retail</p>
-                  <p className="text-xl font-bold text-neutral-900">{fmt(report.marketSnapshot.avgRetail)}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">High Retail</p>
-                  <p className="text-xl font-bold text-neutral-900">{fmt(report.marketSnapshot.highRetail)}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">Comparables Used</p>
-                  <p className="text-xl font-bold text-neutral-900">{report.marketSnapshot.comparablesUsed}</p>
-                </div>
+            <div className="flex items-center gap-3 mb-4">
+              <p className="text-sm text-neutral-500">Expected Gross Profit:</p>
+              <p className="text-xl font-bold text-neutral-900">{fmt(report.profitCalculation.expectedGrossProfit)}</p>
+              <span className={`text-xs font-medium px-2 py-1 rounded-full uppercase tracking-wide ${GROSS_PROFIT_STYLES[report.profitCalculation.grossProfitRating]}`}>
+                {report.profitCalculation.grossProfitRating}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-4 text-sm pt-4 border-t border-neutral-100">
+              <div>
+                <p className="text-neutral-500">Target Gross Profit</p>
+                <p className="text-neutral-900 font-medium">
+                  {fmt(report.profitCalculation.targetGrossProfit)}
+                  {report.profitCalculation.targetGrossProfitMode === 'percentage' && (
+                    <span className="font-normal text-neutral-500">
+                      {' '}({report.profitCalculation.targetGrossProfitPercent}% of retail value)
+                    </span>
+                  )}
+                </p>
               </div>
-            ) : (
-              <p className="text-sm text-danger font-medium">
-                Insufficient market data — no comparable listings were found for this vehicle.
-              </p>
-            )}
+              <div>
+                <p className="text-neutral-500">Max Safe Buy Price</p>
+                <p className="text-neutral-900 font-medium">{fmt(report.profitCalculation.recommendedMaxBuyPrice)}</p>
+              </div>
+            </div>
           </Card>
         </div>
 
-        {/* Recon Estimate */}
+        {/* 4. Recon Estimate */}
         <div>
-          <h2 className="text-lg font-bold text-neutral-900 mb-4">Recon Estimate</h2>
+          <SectionHeading number={4} title="Recon Estimate" />
           <Card className="p-5">
             <div className="flex items-center justify-between mb-2">
               <p className="text-2xl font-bold text-neutral-900">{fmt(report.reconEstimate.amount)}</p>
@@ -334,71 +376,51 @@ export default function ResultsPage() {
           </Card>
         </div>
 
-        {/* Profit Calculation */}
+        {/* 5. Market Snapshot */}
         <div>
-          <h2 className="text-lg font-bold text-neutral-900 mb-4">Profit Calculation</h2>
+          <SectionHeading number={5} title="Market Snapshot" />
           <Card className="p-5">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-              <div>
-                <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">Conservative Retail Value</p>
-                <p className="text-lg font-bold text-neutral-900">{fmt(report.profitCalculation.conservativeRetailValue)}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">Recommended Max Buy Price</p>
-                <p className="text-lg font-bold text-primary-900">{fmt(report.profitCalculation.recommendedMaxBuyPrice)}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">Target Gross Profit</p>
-                <p className="text-lg font-bold text-neutral-900">
-                  {fmt(report.profitCalculation.targetGrossProfit)}
-                  {report.profitCalculation.targetGrossProfitMode === 'percentage' && (
-                    <span className="text-sm font-normal text-neutral-500">
-                      {' '}({report.profitCalculation.targetGrossProfitPercent}% of retail value)
-                    </span>
-                  )}
+            {report.marketSnapshot.sufficientData ? (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">Low Retail</p>
+                    <p className="text-xl font-bold text-neutral-900">{fmt(report.marketSnapshot.lowRetail)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">Avg Retail</p>
+                    <p className="text-xl font-bold text-neutral-900">{fmt(report.marketSnapshot.avgRetail)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">High Retail</p>
+                    <p className="text-xl font-bold text-neutral-900">{fmt(report.marketSnapshot.highRetail)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">Comparables</p>
+                    <p className="text-xl font-bold text-neutral-900">{report.marketSnapshot.comparablesUsed}</p>
+                  </div>
+                </div>
+                <p className="text-xs text-neutral-400 mt-3">
+                  {report.marketSnapshot.source === 'manual' ? 'Entered from your appraisal tool.' : 'Sourced from scraped market comparables.'}
                 </p>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">
-                  Risk Buffer ({(report.profitCalculation.riskBufferPct * 100).toFixed(1)}%)
-                </p>
-                <p className="text-lg font-bold text-neutral-900">{fmt(report.profitCalculation.riskBuffer)}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 pt-4 border-t border-neutral-100">
-              <p className="text-sm text-neutral-500">Expected Gross Profit:</p>
-              <p className="text-xl font-bold text-neutral-900">{fmt(report.profitCalculation.expectedGrossProfit)}</p>
-              <span className={`text-xs font-medium px-2 py-1 rounded-full uppercase tracking-wide ${GROSS_PROFIT_STYLES[report.profitCalculation.grossProfitRating]}`}>
-                {report.profitCalculation.grossProfitRating}
-              </span>
-            </div>
+              </>
+            ) : (
+              <p className="text-sm text-danger font-medium">
+                Insufficient market data — no retail range was provided for this vehicle.
+              </p>
+            )}
           </Card>
         </div>
 
-        {/* Risk + Confidence */}
+        {/* 6. Risk Factors */}
         <div>
-          <h2 className="text-lg font-bold text-neutral-900 mb-4">Risk &amp; Confidence</h2>
-          <Card className="p-5 space-y-5">
+          <SectionHeading number={6} title="Risk Factors" />
+          <Card className="p-5 space-y-4">
             <div className="flex items-center gap-3">
               <p className="text-sm text-neutral-500">Days-to-Sell Risk:</p>
               <span className={`text-xs font-medium px-2 py-1 rounded-full uppercase tracking-wide ${RISK_STYLES[report.riskAndConfidence.daysToSellRisk]}`}>
                 {report.riskAndConfidence.daysToSellRisk}
               </span>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm text-neutral-500">Confidence Score</p>
-                <p className="text-sm font-semibold text-neutral-900">
-                  {report.riskAndConfidence.confidenceScore} / 100
-                </p>
-              </div>
-              <ConfidenceBar score={report.riskAndConfidence.confidenceScore} />
-              <ul className="text-sm text-neutral-500 list-disc list-inside space-y-0.5 mt-3">
-                {report.riskAndConfidence.confidenceReasons.map((reason, i) => (
-                  <li key={i}>{reason}</li>
-                ))}
-              </ul>
             </div>
 
             {report.riskAndConfidence.missingData.length > 0 && (
@@ -413,28 +435,58 @@ export default function ResultsPage() {
                 </div>
               </div>
             )}
+
+            {report.appraisalInput.knownRisks && (
+              <div>
+                <p className="text-sm text-neutral-500 mb-1">Known risks</p>
+                <p className="text-sm text-neutral-900 whitespace-pre-wrap">{report.appraisalInput.knownRisks}</p>
+              </div>
+            )}
           </Card>
         </div>
 
-        {/* Recommended Action */}
+        {/* 7. Confidence Explanation */}
         <div>
-          <h2 className="text-lg font-bold text-neutral-900 mb-4">Recommended Action</h2>
-          <Card className={`p-5 border ${verdictStyle.card}`}>
-            <p className={`font-medium ${verdictStyle.heading}`}>{report.verdict.explanation}</p>
+          <SectionHeading number={7} title="Confidence Explanation" />
+          <Card className="p-5">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm text-neutral-500">Confidence Score</p>
+              <p className="text-sm font-semibold text-neutral-900">
+                {report.riskAndConfidence.confidenceScore} / 100
+              </p>
+            </div>
+            <ConfidenceBar score={report.riskAndConfidence.confidenceScore} />
+            <ul className="text-sm text-neutral-500 list-disc list-inside space-y-0.5 mt-3">
+              {report.riskAndConfidence.confidenceReasons.map((reason, i) => (
+                <li key={i}>{reason}</li>
+              ))}
+            </ul>
           </Card>
         </div>
 
-        {/* Comparables */}
+        {/* 8. Buyer Notes */}
         <div>
-          <h2 className="text-lg font-bold text-neutral-900 mb-4">
-            Comparable Listings
-            <span className="text-neutral-400 font-normal text-sm ml-2">
-              ({report.marketSnapshot.comparablesUsed} analyzed)
-            </span>
-          </h2>
-          <Card className="divide-y divide-neutral-100">
-            {appraisal.comps_data && appraisal.comps_data.length > 0 ? (
-              appraisal.comps_data.slice(0, 10).map((comp, i) => (
+          <SectionHeading number={8} title="Buyer Notes" />
+          <Card className="p-5">
+            {report.appraisalInput.notes ? (
+              <p className="text-sm text-neutral-900 whitespace-pre-wrap">{report.appraisalInput.notes}</p>
+            ) : (
+              <p className="text-sm text-neutral-400">No notes entered.</p>
+            )}
+          </Card>
+        </div>
+
+        {/* Comparable Listings — only present on older, scraped appraisals */}
+        {appraisal.comps_data && appraisal.comps_data.length > 0 && (
+          <div>
+            <h2 className="text-lg font-bold text-neutral-900 mb-4">
+              Comparable Listings
+              <span className="text-neutral-400 font-normal text-sm ml-2">
+                ({report.marketSnapshot.comparablesUsed} analyzed)
+              </span>
+            </h2>
+            <Card className="divide-y divide-neutral-100">
+              {appraisal.comps_data.slice(0, 10).map((comp, i) => (
                 <div key={i} className="p-4 flex items-center justify-between gap-4">
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-neutral-900 truncate">
@@ -461,14 +513,10 @@ export default function ResultsPage() {
                     )}
                   </div>
                 </div>
-              ))
-            ) : (
-              <p className="p-6 text-sm text-neutral-500 text-center">
-                No comparable listings recorded.
-              </p>
-            )}
-          </Card>
-        </div>
+              ))}
+            </Card>
+          </div>
+        )}
       </main>
     </div>
   );
