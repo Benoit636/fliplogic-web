@@ -14,6 +14,7 @@ import { Select } from '@/components/Select';
 import { Textarea } from '@/components/Textarea';
 import { Card } from '@/components/Card';
 import { Logo } from '@/components/Logo';
+import { VinScanner } from '@/components/VinScanner';
 
 // Shared with the backend's condition-based recon cost defaults
 // (excellent/good/average/rough) — see buyDecisionReport.js.
@@ -88,9 +89,12 @@ export default function NewAppraisalPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [profitMode, setProfitMode] = useState<'dollar' | 'percentage'>('dollar');
 
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm<AppraisalFormData>({
     resolver: zodResolver(appraisalSchema),
@@ -165,16 +169,39 @@ export default function NewAppraisalPage() {
               Vehicle
             </h2>
 
-            <Input
-              {...register('vin')}
-              label="VIN"
-              placeholder="e.g., 3G1YY22G965452168"
-              error={errors.vin?.message}
-              maxLength={17}
-              autoFocus
-              required
-              className="text-lg tracking-wide mb-6"
-            />
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-neutral-700">
+                  VIN<span className="text-danger ml-1">*</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsScannerOpen(true)}
+                  className="text-xs font-medium text-primary-600 hover:text-primary-700"
+                >
+                  Scan VIN Barcode
+                </button>
+              </div>
+              <Input
+                {...register('vin')}
+                placeholder="e.g., 3G1YY22G965452168"
+                error={errors.vin?.message}
+                maxLength={17}
+                autoFocus
+                required
+                className="text-lg tracking-wide"
+              />
+            </div>
+
+            {isScannerOpen && (
+              <VinScanner
+                onScan={(vin) => {
+                  setValue('vin', vin, { shouldValidate: true });
+                  setIsScannerOpen(false);
+                }}
+                onClose={() => setIsScannerOpen(false)}
+              />
+            )}
 
             <div className="grid grid-cols-2 gap-4 mb-6">
               <Input
