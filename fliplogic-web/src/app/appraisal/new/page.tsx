@@ -90,6 +90,7 @@ export default function NewAppraisalPage() {
   const [profitMode, setProfitMode] = useState<'dollar' | 'percentage'>('dollar');
 
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [vinDecodeStatus, setVinDecodeStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
 
   const {
     register,
@@ -105,6 +106,25 @@ export default function NewAppraisalPage() {
       router.push('/login');
     }
   }, [hasHydrated, authUser, router]);
+
+  // Best-effort — a dealer scanning/typing a VIN shouldn't have to also
+  // type Year/Make/Model when the VIN already tells us that. Silently
+  // leaves those fields alone (for manual entry) if the decode fails.
+  const decodeVin = async (vin: string) => {
+    if (!/^[A-HJ-NPR-Z0-9]{17}$/i.test(vin)) return;
+
+    setVinDecodeStatus('loading');
+    try {
+      const { data } = await apiClient.get(`/api/appraisals/decode-vin/${vin}`);
+      setValue('year', data.year, { shouldValidate: true });
+      setValue('make', data.make, { shouldValidate: true });
+      if (data.model) setValue('model', data.model, { shouldValidate: true });
+      if (data.trim) setValue('trim', data.trim);
+      setVinDecodeStatus('done');
+    } catch {
+      setVinDecodeStatus('error');
+    }
+  };
 
   const onSubmit = async (data: AppraisalFormData) => {
     if (profitMode === 'percentage' && data.targetGrossProfit != null && data.targetGrossProfit > 100) {
@@ -182,15 +202,33 @@ export default function NewAppraisalPage() {
                   Scan VIN Barcode
                 </button>
               </div>
-              <Input
-                {...register('vin')}
-                placeholder="e.g., 3G1YY22G965452168"
-                error={errors.vin?.message}
-                maxLength={17}
-                autoFocus
-                required
-                className="text-lg tracking-wide"
-              />
+              {(() => {
+                const vinField = register('vin');
+                return (
+                  <Input
+                    {...vinField}
+                    onBlur={(e) => {
+                      vinField.onBlur(e);
+                      decodeVin(e.target.value.trim().toUpperCase());
+                    }}
+                    placeholder="e.g., 3G1YY22G965452168"
+                    error={errors.vin?.message}
+                    maxLength={17}
+                    autoFocus
+                    required
+                    className="text-lg tracking-wide"
+                  />
+                );
+              })()}
+              {vinDecodeStatus === 'loading' && (
+                <p className="text-xs text-neutral-400 mt-1">Looking up Year/Make/Model from VIN...</p>
+              )}
+              {vinDecodeStatus === 'done' && (
+                <p className="text-xs text-accent-700 mt-1">Year/Make/Model filled in from VIN — double-check before submitting.</p>
+              )}
+              {vinDecodeStatus === 'error' && (
+                <p className="text-xs text-neutral-400 mt-1">Couldn't decode this VIN — enter Year/Make/Model manually.</p>
+              )}
             </div>
 
             {isScannerOpen && (
@@ -198,6 +236,7 @@ export default function NewAppraisalPage() {
                 onScan={(vin) => {
                   setValue('vin', vin, { shouldValidate: true });
                   setIsScannerOpen(false);
+                  decodeVin(vin);
                 }}
                 onClose={() => setIsScannerOpen(false)}
               />
