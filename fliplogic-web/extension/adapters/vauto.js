@@ -1,16 +1,18 @@
-// vAuto adapter — UNVERIFIED PLACEHOLDER.
+// vAuto adapter — page detection confirmed, field extraction still a
+// placeholder.
 //
-// This has not been tested against a real vAuto page. It exists so the
-// rest of the capture pipeline (popup, background, submission to
-// FlipLogic) can be built and demoed end-to-end today, without pretending
-// scraping logic works when it's never seen real markup — the same reason
-// the AutoTrader comps scraper needed real DevTools screenshots before its
+// isSupportedPage() below is real: confirmed against an actual completed
+// appraisal URL (provision.vauto.app.coxautoinc.com/Va/Appraisal/Default.aspx
+// with AppraisalStatus=Completed). That page is behind vAuto's own login,
+// so it can't be fetched or inspected remotely — extract() still can't be
+// written without seeing the page's actual markup, the same reason the
+// AutoTrader comps scraper needed real DevTools screenshots before its
 // selectors were written, not guesses.
 //
-// To finish this: grab a completed appraisal in vAuto, open DevTools,
-// and either "Copy outerHTML" on the appraisal summary panel or screenshot
-// it with the element inspector open on the fields below. Then replace
-// isSupportedPage() and extract() with the real selectors.
+// To finish this: on that completed-appraisal page, open DevTools and
+// either "Copy outerHTML" on the appraisal summary panel or screenshot it
+// with the element inspector open on the fields below. Then replace
+// extract() with the real selectors.
 //
 // Fields FlipLogic needs out of that panel:
 //   VIN, Year, Make, Model, Trim, Mileage, Condition,
@@ -24,9 +26,9 @@ window.FlipLogicAdapters.vauto = {
   label: 'vAuto',
 
   isSupportedPage() {
-    // Best-guess URL pattern — unverified. Replace once we know vAuto's
-    // real appraisal-summary route.
-    return /appraisal|valuation/i.test(window.location.pathname);
+    const isAppraisalPage = /\/Va\/Appraisal\/Default\.aspx/i.test(window.location.pathname);
+    const isCompleted = new URLSearchParams(window.location.search).get('AppraisalStatus') === 'Completed';
+    return isAppraisalPage && isCompleted;
   },
 
   extract() {
@@ -34,7 +36,7 @@ window.FlipLogicAdapters.vauto = {
       ok: false,
       reason: 'not_configured',
       message:
-        "This vAuto adapter hasn't been wired up to real page markup yet — capture isn't available on this page yet.",
+        "This page is recognized as a completed vAuto appraisal, but field extraction hasn't been wired up to the real page markup yet.",
     };
   },
 };
