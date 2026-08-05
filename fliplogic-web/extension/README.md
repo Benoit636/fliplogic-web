@@ -4,9 +4,10 @@ Tier 1 of the [integration architecture](../CLAUDE.md): reads a completed
 appraisal straight off a provider's own page and sends it into FlipLogic —
 no retyping.
 
-## Status: v0.1 — working shell, vAuto adapter not wired up yet
+## Status: v0.2 — vAuto adapter reads real fields
 
-What works today, tested end-to-end against a real backend:
+What works today, tested end-to-end against a real backend (and, for the
+vAuto adapter, against markup captured from a real completed appraisal):
 
 - Login (stores a FlipLogic auth token locally, never the dealer's vAuto
   credentials)
@@ -14,15 +15,17 @@ What works today, tested end-to-end against a real backend:
   production)
 - Detecting whether the current tab has a capture adapter, and falling back
   gracefully to "enter this manually" when it doesn't
+- `adapters/vauto.js` reads VIN, year, make/model/trim, mileage, condition,
+  vAuto's appraised value, reconditioning cost, and the retail range +
+  comparable count (from the Competitive Set table) straight off a
+  completed vAuto appraisal page
 - Submitting a captured payload to `POST /api/appraisals/manual` (the same,
   unchanged endpoint the manual-entry form uses) and opening the resulting
   Buy Decision Report in a new tab
 
-What's **not** built yet: `adapters/vauto.js` is a placeholder. It doesn't
-read real vAuto pages — see the comment at the top of that file for exactly
-why, and what's needed to finish it (a DevTools snapshot of a real completed
-vAuto appraisal, same as how the AutoTrader comps scraper's selectors were
-sourced).
+Not yet live-tested against an actual vAuto session (only against synthetic
+markup that mirrors the real captured structure) — the first live capture
+should be treated as a dry run and checked against the appraisal by hand.
 
 ## Load it locally
 
