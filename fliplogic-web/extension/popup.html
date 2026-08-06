@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>FlipLogic Capture</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <span class="mark" aria-hidden="true"></span>
+    <h1>FlipLogic Capture</h1>
+  </header>
+
+  <main id="app">
+    <p class="loading">Loading…</p>
+  </main>
+
+  <footer>
+    <button id="settingsToggle" type="button" class="link-btn">Settings</button>
+  </footer>
+
+  <section id="settingsPanel" hidden>
+    <label>
+      App URL
+      <input id="appBaseUrl" type="text" placeholder="https://app.fliplogic.com" />
+    </label>
+    <label>
+      API URL
+      <input id="apiBaseUrl" type="text" placeholder="https://api.fliplogic.com" />
+    </label>
+    <button id="saveSettings" type="button">Save</button>
+    <p id="settingsSaved" class="hint" hidden>Saved.</p>
+  </section>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

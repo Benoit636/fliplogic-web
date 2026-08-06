@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "FlipLogic Capture",
+  "version": "0.1.0",
+  "description": "Send a completed vAuto appraisal straight into FlipLogic's Buy Decision Report — no retyping.",
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": [
+    "*://provision.vauto.app.coxautoinc.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["*://provision.vauto.app.coxautoinc.com/*"],
+      "js": ["adapters/vauto.js", "content-script.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
