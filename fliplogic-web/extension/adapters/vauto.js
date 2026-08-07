@@ -1,12 +1,14 @@
 // vAuto adapter.
 //
 // isSupportedPage() and every selector below are confirmed against a real
-// captured completed appraisal (a full `$0.shadowRoot.innerHTML` dump of
-// <profit-time-guided-appraisal>, vAuto's Angular Elements root component)
-// — not guessed. vAuto's UI is built from Stencil web components, several
-// with their own nested shadow roots, which is why extraction here reads
-// `.shadowRoot` / `.value` / `.checked` directly off live elements instead
-// of matching static HTML.
+// completed appraisal page. vAuto's entire UI is built from Stencil web
+// components nested several levels deep in **open shadow roots** — even
+// elements with stable, predictable ids (the Competitive Vehicles button,
+// its results table, the Make/Model/Trim selects, condition checkboxes)
+// live inside one shadow tree or another, not in the plain document. Plain
+// `document.querySelector` can't see past a shadow boundary, so every
+// lookup here goes through `deepQuerySelector`, which walks into every
+// shadow root it finds until it locates the element.
 //
 // What's confirmed real:
 //   - Make/Model/Trim: native <select> elements with stable ids.
@@ -15,10 +17,11 @@
 //   - Appraised Value / Reconditioning: vAuto's own formatted-input
 //     components, identified by id, read through their own shadow root.
 //   - VIN / Year / Mileage / retail range / comparable count: all read
-//     from the "Competitive Set" table (the modal listing comparable
-//     vehicles), which is the one place on the page that renders this as
-//     plain text rather than nested shadow DOM. The appraised vehicle's
-//     own row is marked with a `.highlight` class and a "My Vehicle" chip.
+//     from the "Competitive Set" table (opened via
+//     #comp-set-vehicles-table-btn), the one place on the page that
+//     renders this as plain text rather than nested shadow DOM. The
+//     appraised vehicle's own row is marked with a `.highlight` class and
+//     a "My Vehicle" chip.
 //
 // What's inferred rather than directly observed: the internal shadow-DOM
 // shape of <vauto-appraisal-formatted-input> (assumed to be a <label> +
@@ -27,6 +30,25 @@
 // exercised against real markup.
 
 window.FlipLogicAdapters = window.FlipLogicAdapters || {};
+
+// Walks into every open shadow root under `root` until it finds a match.
+// Needed because vAuto nests most of its UI inside shadow DOM, which plain
+// document.querySelector cannot see past.
+function deepQuerySelector(selector, root = document) {
+  const found = root.querySelector(selector);
+  if (found) return found;
+  for (const el of root.querySelectorAll('*')) {
+    if (el.shadowRoot) {
+      const nested = deepQuerySelector(selector, el.shadowRoot);
+      if (nested) return nested;
+    }
+  }
+  return null;
+}
+
+function deepGetElementById(id, root = document) {
+  return deepQuerySelector(`#${id}`, root);
+}
 
 function parseCurrency(text) {
   if (!text) return null;
@@ -46,16 +68,16 @@ function getShadowInputValue(el) {
 }
 
 async function ensureCompetitiveSetOpen() {
-  let table = document.querySelector('.comp-set-table-container');
+  let table = deepQuerySelector('.comp-set-table-container');
   if (table) return { table, openedByUs: false };
 
-  const openBtn = document.querySelector('#comp-set-vehicles-table-btn');
+  const openBtn = deepQuerySelector('#comp-set-vehicles-table-btn');
   if (!openBtn) return { table: null, openedByUs: false };
   openBtn.click();
 
   for (let i = 0; i < 20; i++) {
     await new Promise((resolve) => setTimeout(resolve, 150));
-    table = document.querySelector('.comp-set-table-container');
+    table = deepQuerySelector('.comp-set-table-container');
     if (table) return { table, openedByUs: true };
   }
   return { table: null, openedByUs: false };
@@ -117,7 +139,7 @@ const CONDITION_CHECKBOX_MAP = {
 
 function readCondition() {
   for (const [id, mapped] of Object.entries(CONDITION_CHECKBOX_MAP)) {
-    const el = document.getElementById(id);
+    const el = deepGetElementById(id);
     if (el?.checked) return mapped;
   }
   return null;
@@ -134,14 +156,14 @@ window.FlipLogicAdapters.vauto = {
   },
 
   async extract() {
-    const make = document.querySelector('#trim-detail-Make-select-list')?.value || null;
-    const model = document.querySelector('#trim-detail-Model-select-list')?.value || null;
-    const trim = document.querySelector('#series-select-list')?.value || null;
+    const make = deepQuerySelector('#trim-detail-Make-select-list')?.value || null;
+    const model = deepQuerySelector('#trim-detail-Model-select-list')?.value || null;
+    const trim = deepQuerySelector('#series-select-list')?.value || null;
     const condition = readCondition();
 
-    const appraisalToolValue = parseCurrency(getShadowInputValue(document.querySelector('#appraised-value-input')));
+    const appraisalToolValue = parseCurrency(getShadowInputValue(deepQuerySelector('#appraised-value-input')));
     const estimatedReconCost = parseCurrency(
-      getShadowInputValue(document.querySelector('#pt-qa-costs-step-field-reconditioning'))
+      getShadowInputValue(deepQuerySelector('#pt-qa-costs-step-field-reconditioning'))
     );
 
     const comps = await extractFromCompetitiveSet();
