@@ -31,3 +31,29 @@ back or scope it down before building it.
   Risk Level) followed by Final Recommendation, Maximum Buy Number, Profit
   Calculation, Recon Estimate, Market Snapshot, Risk Factors, Confidence
   Explanation, Buyer Notes — in that order.
+
+## Ideas parked for later
+
+Directional notes, not commitments — evaluate against the standing filter
+above before building either of these.
+
+- **"Capital at Risk" framing.** Lead the report with an investment-decision
+  summary instead of a pricing summary: Capital at Risk (= Max Safe Buy
+  Price, reframed), Expected Gross Profit, Expected ROI%, Estimated Days to
+  Sell, Confidence, and a plain-language "Why?" bullet list (demand, recon
+  vs. target, price within safe range, gross vs. minimum, market support).
+  Mostly a re-presentation of numbers the report already computes — ROI% is
+  a cheap derivation (profit ÷ capital at risk), but Days to Sell needs a
+  real basis (e.g. comp inventory age) before it ships, or it's a
+  fabricated number that undermines trust in everything else on the report.
+
+- **Dealership-specific learning.** Over time, learn a given dealership's
+  own acquisition track record — which vehicle segments consistently
+  produce above-average gross, sell fastest, sit too long, or lose money —
+  and surface it as a recommendation ("this dealership performs 18% better
+  on compact SUVs than midsize sedans"). Turns the product from
+  market-data-driven to dealership-performance-driven, and gets more
+  valuable (and harder to replace) the longer a dealership uses it. Needs
+  enough closed-loop outcome data (actual sale price/time, not just the
+  buy decision) per dealership before this is more than a guess — worth
+  revisiting once there's a real base of completed deals to learn from.
