@@ -57,3 +57,15 @@ above before building either of these.
   enough closed-loop outcome data (actual sale price/time, not just the
   buy decision) per dealership before this is more than a guess — worth
   revisiting once there's a real base of completed deals to learn from.
+
+- **"Gross Protected by Flip Logic" metric.** Track, per acquisition, the
+  gap between what a manager originally intended to pay and Flip Logic's
+  recommended maximum buy vs. the actual acquisition price — then roll it
+  up into a monthly dashboard: acquisitions analyzed, overpayments avoided,
+  total acquisition capital protected, projected incremental gross. Turns
+  the product's value story from "a $750/month tool" into a concrete ROI
+  number ("Flip Logic protected $28,450 this month"), which is a much
+  harder thing to cancel than a subscription. Needs a captured "intended
+  price" data point per acquisition (not just the final price) to compute
+  the gap — likely a small addition to the manual-entry/capture flow, not
+  just a reporting change.
