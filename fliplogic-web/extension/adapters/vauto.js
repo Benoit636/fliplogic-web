@@ -22,14 +22,15 @@
 //     renders this as plain text rather than nested shadow DOM. The
 //     appraised vehicle's own row is marked with a `.highlight` class and
 //     a "My Vehicle" chip.
-//   - VIN fallback (findVinFromForm): on a real appraisal where the
-//     vehicle wasn't among its own comps (no highlighted row at all), the
-//     VIN is still readable straight off the page's own VIN field —
-//     confirmed real, its <input>.value is the plain VIN, though the
-//     field has no id/name to target directly, so it's found by scanning
-//     every <vauto-appraisal-formatted-input>'s value for one shaped like
-//     a VIN rather than by selector. Year/mileage don't have an
-//     equivalently unambiguous fallback yet, so they stay comps-only.
+//   - VIN / Year fallbacks (findVinFromForm / findYearFromForm): on a real
+//     appraisal where the vehicle wasn't among its own comps (no
+//     highlighted row at all), both are still readable straight off the
+//     page's own fields — confirmed real, each <input>.value is the plain
+//     VIN/year, though neither field has an id/name to target directly,
+//     so each is found by scanning every <vauto-appraisal-formatted-
+//     input>'s value for one shaped like a VIN or a model year rather
+//     than by selector. Mileage doesn't have an equivalently unambiguous
+//     fallback yet, so it stays comps-only.
 
 window.FlipLogicAdapters = window.FlipLogicAdapters || {};
 
@@ -73,6 +74,25 @@ function findVinFromForm() {
     const value = host.shadowRoot?.querySelector('input')?.value;
     if (value && /^[A-HJ-NPR-Z0-9]{17}$/i.test(value)) {
       return value.toUpperCase();
+    }
+  }
+  return null;
+}
+
+// Same situation as findVinFromForm() — year is a required backend field,
+// but with no "My Vehicle" comp row there's no other source for it. The
+// page's own Year field is a plain 4-digit value, same generic
+// formatted-input shape as VIN, so it's found the same way: scan every
+// instance for a value that's shaped like a model year rather than
+// targeting one field by selector.
+function findYearFromForm() {
+  const currentYear = new Date().getFullYear();
+  const hosts = deepQuerySelectorAll('vauto-appraisal-formatted-input');
+  for (const host of hosts) {
+    const value = host.shadowRoot?.querySelector('input')?.value;
+    if (value && /^\d{4}$/.test(value)) {
+      const year = Number(value);
+      if (year >= 1980 && year <= currentYear + 1) return year;
     }
   }
   return null;
@@ -210,7 +230,7 @@ window.FlipLogicAdapters.vauto = {
       ok: true,
       payload: {
         vin,
-        year: comps.myVehicle?.year ?? null,
+        year: comps.myVehicle?.year ?? findYearFromForm(),
         make,
         model,
         trim,
