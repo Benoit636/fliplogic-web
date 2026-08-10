@@ -22,12 +22,14 @@
 //     renders this as plain text rather than nested shadow DOM. The
 //     appraised vehicle's own row is marked with a `.highlight` class and
 //     a "My Vehicle" chip.
-//
-// What's inferred rather than directly observed: the internal shadow-DOM
-// shape of <vauto-appraisal-formatted-input> (assumed to be a <label> +
-// <input> pair) — reasonable for this component family, but only the two
-// fields actually queried here (appraised value, recon cost) have been
-// exercised against real markup.
+//   - VIN fallback (findVinFromForm): on a real appraisal where the
+//     vehicle wasn't among its own comps (no highlighted row at all), the
+//     VIN is still readable straight off the page's own VIN field —
+//     confirmed real, its <input>.value is the plain VIN, though the
+//     field has no id/name to target directly, so it's found by scanning
+//     every <vauto-appraisal-formatted-input>'s value for one shaped like
+//     a VIN rather than by selector. Year/mileage don't have an
+//     equivalently unambiguous fallback yet, so they stay comps-only.
 
 window.FlipLogicAdapters = window.FlipLogicAdapters || {};
 
@@ -48,6 +50,32 @@ function deepQuerySelector(selector, root = document) {
 
 function deepGetElementById(id, root = document) {
   return deepQuerySelector(`#${id}`, root);
+}
+
+function deepQuerySelectorAll(selector, root = document, results = []) {
+  results.push(...root.querySelectorAll(selector));
+  for (const el of root.querySelectorAll('*')) {
+    if (el.shadowRoot) deepQuerySelectorAll(selector, el.shadowRoot, results);
+  }
+  return results;
+}
+
+// Fallback for when the appraised vehicle isn't marked "My Vehicle" in its
+// own Competitive Set (observed on a real appraisal where the vehicle
+// simply wasn't among its own comps) — every <vauto-appraisal-formatted-
+// input> on the page shares the same generic classes/no id, so instead of
+// targeting one by selector, scan all of their live values for one that
+// matches a VIN's shape. Confirmed against real markup: the VIN field's
+// underlying <input> carries the real VIN as its .value.
+function findVinFromForm() {
+  const hosts = deepQuerySelectorAll('vauto-appraisal-formatted-input');
+  for (const host of hosts) {
+    const value = host.shadowRoot?.querySelector('input')?.value;
+    if (value && /^[A-HJ-NPR-Z0-9]{17}$/i.test(value)) {
+      return value.toUpperCase();
+    }
+  }
+  return null;
 }
 
 function parseCurrency(text) {
@@ -167,8 +195,9 @@ window.FlipLogicAdapters.vauto = {
     );
 
     const comps = await extractFromCompetitiveSet();
+    const vin = comps?.myVehicle?.vin || findVinFromForm();
 
-    if (!comps || !comps.myVehicle?.vin || comps.low == null) {
+    if (!comps || !vin || comps.low == null) {
       return {
         ok: false,
         reason: 'incomplete',
@@ -180,12 +209,12 @@ window.FlipLogicAdapters.vauto = {
     return {
       ok: true,
       payload: {
-        vin: comps.myVehicle.vin,
-        year: comps.myVehicle.year,
+        vin,
+        year: comps.myVehicle?.year ?? null,
         make,
         model,
         trim,
-        mileage: comps.myVehicle.mileage,
+        mileage: comps.myVehicle?.mileage ?? null,
         condition,
         appraisalToolValue,
         lowRetail: comps.low,
