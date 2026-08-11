@@ -22,15 +22,18 @@
 //     renders this as plain text rather than nested shadow DOM. The
 //     appraised vehicle's own row is marked with a `.highlight` class and
 //     a "My Vehicle" chip.
-//   - VIN / Year fallbacks (findVinFromForm / findYearFromForm): on a real
-//     appraisal where the vehicle wasn't among its own comps (no
-//     highlighted row at all), both are still readable straight off the
-//     page's own fields — confirmed real, each <input>.value is the plain
-//     VIN/year, though neither field has an id/name to target directly,
-//     so each is found by scanning every <vauto-appraisal-formatted-
-//     input>'s value for one shaped like a VIN or a model year rather
-//     than by selector. Mileage doesn't have an equivalently unambiguous
-//     fallback yet, so it stays comps-only.
+//   - VIN / Year / Mileage fallbacks (findVinFromForm / findYearFromForm /
+//     findMileageFromForm): on a real appraisal where the vehicle wasn't
+//     among its own comps (no highlighted row at all), all three are
+//     still readable straight off the page's own fields — confirmed real
+//     against two separate appraisals missing this data. Neither field
+//     has an id/name to target directly, so VIN and year are found by
+//     scanning every <vauto-appraisal-formatted-input>'s value for one
+//     shaped like a VIN or a model year; mileage has no equivalently
+//     distinctive value shape (indistinguishable from a price by content
+//     alone), so it's found by position instead — the sibling immediately
+//     after the VIN field, confirmed consistent across every appraisal
+//     seen.
 
 window.FlipLogicAdapters = window.FlipLogicAdapters || {};
 
@@ -93,6 +96,28 @@ function findYearFromForm() {
     if (value && /^\d{4}$/.test(value)) {
       const year = Number(value);
       if (year >= 1980 && year <= currentYear + 1) return year;
+    }
+  }
+  return null;
+}
+
+// Same no-comp-row situation again, but mileage has no value shape
+// distinctive enough to scan for (unlike VIN or a 4-digit year, it'd be
+// impossible to tell apart from a price). Confirmed real instead by
+// position: on every appraisal page seen, the Odometer field is the very
+// next <vauto-appraisal-formatted-input> sibling right after the VIN
+// field, inside the same parent element — so once the VIN field is found,
+// its next matching sibling is the mileage.
+function findMileageFromForm() {
+  const hosts = deepQuerySelectorAll('vauto-appraisal-formatted-input');
+  for (const host of hosts) {
+    const value = host.shadowRoot?.querySelector('input')?.value;
+    if (value && /^[A-HJ-NPR-Z0-9]{17}$/i.test(value)) {
+      const siblings = Array.from(host.parentElement?.children || []).filter(
+        (el) => el.tagName === 'VAUTO-APPRAISAL-FORMATTED-INPUT'
+      );
+      const mileageHost = siblings[siblings.indexOf(host) + 1];
+      return parseKm(mileageHost?.shadowRoot?.querySelector('input')?.value);
     }
   }
   return null;
@@ -234,7 +259,7 @@ window.FlipLogicAdapters.vauto = {
         make,
         model,
         trim,
-        mileage: comps.myVehicle?.mileage ?? null,
+        mileage: comps.myVehicle?.mileage ?? findMileageFromForm(),
         condition,
         appraisalToolValue,
         lowRetail: comps.low,
