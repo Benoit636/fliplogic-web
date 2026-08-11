@@ -12,7 +12,9 @@
   },
   "permissions": ["storage", "activeTab", "scripting"],
   "host_permissions": [
-    "*://provision.vauto.app.coxautoinc.com/*"
+    "*://provision.vauto.app.coxautoinc.com/*",
+    "https://fliplogic-backend-production-192d.up.railway.app/*",
+    "http://localhost:4000/*"
   ],
   "content_scripts": [
     {
