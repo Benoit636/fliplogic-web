@@ -69,3 +69,16 @@ above before building either of these.
   price" data point per acquisition (not just the final price) to compute
   the gap — likely a small addition to the manual-entry/capture flow, not
   just a reporting change.
+
+  A cleaner variant of the same idea, needing no external "intended price"
+  input at all: track whether the manager followed or overrode each BUY
+  recommendation (a simple choice already implicit in what they actually
+  paid vs. what Flip Logic said), and compare average front gross on
+  followed vs. overridden deals. E.g. "126 recommendations this month, 48
+  followed (avg. front gross $3,714), 19 overridden (avg. front gross
+  $1,482) → $17,840 in gross protected." The comparison is entirely
+  computable from data Flip Logic already has once outcome tracking
+  exists (recommendation + actual acquisition price + eventual sale
+  gross) — the open question is only how a manager's actual acquisition
+  price gets back into the system per deal (manual follow-up entry,
+  most likely, unless/until there's a closed-loop integration).
