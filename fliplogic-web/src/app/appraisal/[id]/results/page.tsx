@@ -251,9 +251,14 @@ export default function ResultsPage() {
                 </p>
               )}
             </div>
-            <Link href="/appraisal/new">
-              <Button variant="outline" size="sm">New Buy Decision</Button>
-            </Link>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <Link href="/listings">
+                <Button variant="outline" size="sm">All Reports</Button>
+              </Link>
+              <Link href="/appraisal/new">
+                <Button variant="outline" size="sm">New Buy Decision</Button>
+              </Link>
+            </div>
           </div>
         </div>
       </header>
