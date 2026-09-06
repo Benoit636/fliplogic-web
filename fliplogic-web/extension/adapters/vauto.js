@@ -14,6 +14,8 @@
 //   - Make/Model/Trim: native <select> elements with stable ids.
 //   - Condition: Black Book's Extra Clean/Clean/Average/Rough checkboxes,
 //     which map directly onto FlipLogic's excellent/good/average/rough.
+//     Each is an <ids-checkbox> wrapper around a plain <input> nested in
+//     its own shadow root — see isChecked() below.
 //   - Appraised Value / Reconditioning: vAuto's own formatted-input
 //     components, identified by id, read through their own shadow root.
 //   - VIN / Year / Mileage / retail range / comparable count: all read
@@ -210,10 +212,22 @@ const CONDITION_CHECKBOX_MAP = {
   Rough: 'rough',
 };
 
+// The condition checkboxes are <ids-checkbox id="..."> wrapper components —
+// found directly by id since the wrapper itself sits in the light DOM, but
+// its `.checked` property lives on the plain <input> nested one level
+// inside its own shadow root, not on the wrapper. Reading `.checked`
+// straight off the wrapper (the original approach) silently reads as
+// unchecked no matter what's actually selected, which is why condition
+// never came through on live captures despite being visibly set in vAuto.
+function isChecked(el) {
+  if (!el) return false;
+  if (el.checked) return true;
+  return !!el.shadowRoot?.querySelector('input')?.checked;
+}
+
 function readCondition() {
   for (const [id, mapped] of Object.entries(CONDITION_CHECKBOX_MAP)) {
-    const el = deepGetElementById(id);
-    if (el?.checked) return mapped;
+    if (isChecked(deepGetElementById(id))) return mapped;
   }
   return null;
 }
