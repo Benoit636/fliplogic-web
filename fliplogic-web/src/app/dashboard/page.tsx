@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/store/auth';
+import apiClient from '@/lib/api';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Logo } from '@/components/Logo';
@@ -11,6 +12,7 @@ import { Logo } from '@/components/Logo';
 export default function DashboardPage() {
   const router = useRouter();
   const { authUser, hasHydrated } = useAuthStore();
+  const [totalAppraisals, setTotalAppraisals] = useState<number | null>(null);
 
   useEffect(() => {
     // Redirect to login if not authenticated
@@ -18,6 +20,14 @@ export default function DashboardPage() {
       router.push('/login');
     }
   }, [hasHydrated, authUser, router]);
+
+  useEffect(() => {
+    if (!hasHydrated || !authUser) return;
+    apiClient
+      .get('/api/appraisals', { params: { limit: 1 } })
+      .then(({ data }) => setTotalAppraisals(data.total))
+      .catch(() => setTotalAppraisals(null));
+  }, [hasHydrated, authUser]);
 
   if (!hasHydrated || !authUser) return null;
 
@@ -103,8 +113,12 @@ export default function DashboardPage() {
             <div className="text-neutral-500 text-sm font-medium mb-2">
               Total Appraisals
             </div>
-            <div className="text-3xl font-bold text-primary-900">0</div>
-            <p className="text-neutral-500 text-xs mt-2">this month</p>
+            <div className="text-3xl font-bold text-primary-900">
+              {totalAppraisals ?? '—'}
+            </div>
+            <p className="text-neutral-500 text-xs mt-2">
+              <Link href="/listings" className="hover:underline">view all →</Link>
+            </p>
           </Card>
 
           <Card className="p-6">
