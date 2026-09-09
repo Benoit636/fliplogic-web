@@ -18,6 +18,10 @@
 //     its own shadow root — see isChecked() below.
 //   - Appraised Value / Reconditioning: vAuto's own formatted-input
 //     components, identified by id, read through their own shadow root.
+//   - Condition Notes: the Condition card's free-text "Notes" textarea
+//     (#vehicle-condition-notes-textarea), sent as knownRisks — confirmed
+//     real against a saved appraisal with actual appraiser-entered defect
+//     notes in it.
 //   - VIN / Year / Mileage / retail range / comparable count: all read
 //     from the "Competitive Set" table (opened via
 //     #comp-set-vehicles-table-btn), the one place on the page that
@@ -232,6 +236,21 @@ function readCondition() {
   return null;
 }
 
+// The Condition card's own free-text "Notes" field — a plain
+// <textarea id="vehicle-condition-notes-textarea">, not a custom wrapper
+// component like the checkboxes/formatted-inputs above, so its value is
+// read directly (no nested shadow input to reach through). Confirmed real
+// against a saved appraisal where an appraiser had logged actual defects
+// here ("Lots of scratches", "Tailgate rust staring", "Needs driveshaft as
+// per customer") — exactly the kind of condition risk the Buy Decision
+// Report's Risk Factors section is for, so it's sent as knownRisks rather
+// than the generic Buyer Notes field.
+function readConditionNotes() {
+  const el = deepGetElementById('vehicle-condition-notes-textarea');
+  const value = el?.value?.trim();
+  return value || null;
+}
+
 window.FlipLogicAdapters.vauto = {
   id: 'vauto',
   label: 'vAuto',
@@ -247,6 +266,7 @@ window.FlipLogicAdapters.vauto = {
     const model = deepQuerySelector('#trim-detail-Model-select-list')?.value || null;
     const trim = deepQuerySelector('#series-select-list')?.value || null;
     const condition = readCondition();
+    const knownRisks = readConditionNotes();
 
     const appraisalToolValue = parseCurrency(getShadowInputValue(deepQuerySelector('#appraised-value-input')));
     const estimatedReconCost = parseCurrency(
@@ -281,6 +301,7 @@ window.FlipLogicAdapters.vauto = {
         highRetail: comps.high,
         comparableCount: comps.count,
         estimatedReconCost,
+        knownRisks,
       },
     };
   },

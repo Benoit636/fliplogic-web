@@ -17,13 +17,15 @@ real, live vAuto appraisals — not just synthetic markup:
 - Detecting whether the current tab has a capture adapter, and falling back
   gracefully to "enter this manually" when it doesn't
 - `adapters/vauto.js` reads VIN, year, make/model/trim, mileage, condition
-  (confirmed with a real Black Book checkbox selected), vAuto's appraised
-  value, reconditioning cost, and the retail range + comparable count
-  (from the Competitive Set table) straight off a completed vAuto
-  appraisal page. vAuto nests essentially its entire UI in open shadow
-  roots — including elements with stable, predictable ids — so every
-  lookup goes through a `deepQuerySelector` helper that walks into shadow
-  roots instead of plain `document.querySelector`.
+  (confirmed with a real Black Book checkbox selected), the Condition
+  card's free-text notes (sent as `knownRisks`, confirmed against a real
+  appraisal with actual defect notes entered), vAuto's appraised value,
+  reconditioning cost, and the retail range + comparable count (from the
+  Competitive Set table) straight off a completed vAuto appraisal page.
+  vAuto nests essentially its entire UI in open shadow roots — including
+  elements with stable, predictable ids — so every lookup goes through a
+  `deepQuerySelector` helper that walks into shadow roots instead of plain
+  `document.querySelector`.
 - VIN/year/mileage fallbacks (`findVinFromForm`/`findYearFromForm`/
   `findMileageFromForm`) for appraisals where the vehicle isn't marked in
   its own Competitive Set — confirmed against real appraisals that hit
