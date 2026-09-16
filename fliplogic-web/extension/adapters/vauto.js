@@ -302,6 +302,7 @@ window.FlipLogicAdapters.vauto = {
         comparableCount: comps.count,
         estimatedReconCost,
         knownRisks,
+        source: 'vauto',
       },
     };
   },

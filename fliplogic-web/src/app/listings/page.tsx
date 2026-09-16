@@ -98,10 +98,16 @@ function buildFixtureCase(a: AppraisalRow) {
     knownRisks: report.appraisalInput.knownRisks,
   };
 
+  // Both sides carry the same real numbers — `source` labels which side
+  // of the parity comparison each represents, not a claim about how this
+  // particular historical row was actually captured (the database can't
+  // currently tell manual entries and vAuto captures apart — see the
+  // architecture audit). The backend's Universal Appraisal Schema uses
+  // this purely as metadata; it has no effect on the acquisition result.
   return {
     label: `${vehicleTitle} — ${a.vin} — captured ${new Date(a.created_at).toLocaleDateString()}`,
-    testA,
-    testB: JSON.parse(JSON.stringify(testA)),
+    testA: { ...testA, source: 'vauto' },
+    testB: { ...JSON.parse(JSON.stringify(testA)), source: 'manual' },
   };
 }
 

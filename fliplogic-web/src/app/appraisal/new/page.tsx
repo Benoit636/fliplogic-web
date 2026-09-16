@@ -153,6 +153,7 @@ export default function NewAppraisalPage() {
         targetGrossProfitMode: data.targetGrossProfit != null ? profitMode : undefined,
         notes: data.notes || undefined,
         knownRisks: data.knownRisks || undefined,
+        source: 'manual',
       });
 
       router.push(`/appraisal/${response.data.id}/results`);
