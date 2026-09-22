@@ -231,7 +231,11 @@ function isChecked(el) {
 
 function readCondition() {
   for (const [id, mapped] of Object.entries(CONDITION_CHECKBOX_MAP)) {
-    if (isChecked(deepGetElementById(id))) return mapped;
+    const el = deepGetElementById(id);
+    const checked = isChecked(el);
+    // TEMP DEBUG — remove once the condition-capture bug is confirmed fixed.
+    console.log('[FlipLogic debug] readCondition()', id, '→ el found:', !!el, 'checked:', checked);
+    if (checked) return mapped;
   }
   return null;
 }
@@ -267,6 +271,8 @@ window.FlipLogicAdapters.vauto = {
     const trim = deepQuerySelector('#series-select-list')?.value || null;
     const condition = readCondition();
     const knownRisks = readConditionNotes();
+    // TEMP DEBUG — remove once the condition-capture bug is confirmed fixed.
+    console.log('[FlipLogic debug] extract() final condition =', condition, '| knownRisks =', knownRisks);
 
     const appraisalToolValue = parseCurrency(getShadowInputValue(deepQuerySelector('#appraised-value-input')));
     const estimatedReconCost = parseCurrency(
