@@ -40,6 +40,10 @@
 //     alone), so it's found by position instead — the sibling immediately
 //     after the VIN field, confirmed consistent across every appraisal
 //     seen.
+//   - Comp mileage filtering: each comp row's own odometer reading
+//     (same `[data-column="odometer"]` cell used for "My Vehicle") is now
+//     read for every row, not just the subject's — see
+//     COMP_MILEAGE_TOLERANCE below.
 
 window.FlipLogicAdapters = window.FlipLogicAdapters || {};
 
@@ -167,35 +171,64 @@ function closeCompetitiveSetModal(table) {
   modalRoot?.querySelector('.modal-close')?.click();
 }
 
+// A comp whose mileage is this far off (either direction) from the subject
+// vehicle's own mileage doesn't count as a fair price comparison — e.g. a
+// 221,000km unit priced at $4,500 next to a 136,000km appraisal isn't
+// "the low end of this car's market," it's a different, rougher car. Left
+// in as one raw comp, a single such outlier can single-handedly crater
+// the conservative retail value (and therefore the max buy price) even
+// though it says nothing about what this specific vehicle is worth.
+// 0.35 = a dealer-supplied rule of thumb ("30-40% off shouldn't count").
+const COMP_MILEAGE_TOLERANCE = 0.35;
+
 async function extractFromCompetitiveSet() {
   const { table, openedByUs } = await ensureCompetitiveSetOpen();
   if (!table) return null;
 
   const rows = Array.from(table.querySelectorAll('.row-container'));
   let myVehicle = null;
-  const prices = [];
+  const comps = [];
 
   for (const row of rows) {
     const priceText = row.querySelector('[data-column="price"] .number-cell')?.textContent;
     const price = parseCurrency(priceText);
-    if (price) prices.push(price);
+    const odoText = row.querySelector('[data-column="odometer"] .number-cell')?.textContent;
+    const mileage = parseKm(odoText);
+    if (price) comps.push({ price, mileage });
 
     if (row.classList.contains('highlight') && row.textContent.includes('My Vehicle')) {
       const attrText = row.querySelector('.attribute')?.textContent || '';
       const vinMatch = attrText.match(/VIN:\s*([A-HJ-NPR-Z0-9]{17})/i);
       const nameText = row.querySelector('.vehicle-name')?.textContent || '';
       const yearMatch = nameText.match(/^(\d{4})/);
-      const odoText = row.querySelector('[data-column="odometer"] .number-cell')?.textContent;
 
       myVehicle = {
         vin: vinMatch ? vinMatch[1].toUpperCase() : null,
         year: yearMatch ? Number(yearMatch[1]) : null,
-        mileage: parseKm(odoText),
+        mileage,
       };
     }
   }
 
   if (openedByUs) closeCompetitiveSetModal(table);
+
+  const subjectMileage = myVehicle?.mileage ?? findMileageFromForm();
+
+  // Drop comps too far off in mileage to be a fair comparison. If the
+  // subject's own mileage can't be determined, or filtering would remove
+  // every comp (e.g. the whole comp set genuinely skews far from this
+  // vehicle), fall back to the unfiltered set rather than blocking the
+  // capture entirely on a bad edge case.
+  let usableComps = comps;
+  if (subjectMileage != null) {
+    const filtered = comps.filter((c) => {
+      if (c.mileage == null) return true;
+      return Math.abs(c.mileage - subjectMileage) / subjectMileage <= COMP_MILEAGE_TOLERANCE;
+    });
+    if (filtered.length > 0) usableComps = filtered;
+  }
+
+  const prices = usableComps.map((c) => c.price);
 
   if (prices.length === 0) return { myVehicle, low: null, avg: null, high: null, count: 0 };
 
