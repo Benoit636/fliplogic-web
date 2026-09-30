@@ -2,6 +2,7 @@
 import { z } from 'zod';
 import { PLATFORM_KEYS, POST_TYPE_KEYS, PLATFORMS } from '../config.js';
 import { get, run } from '../db.js';
+import { tenantId } from '../tenant.js';
 import { getDealership, isAutopilot } from '../services/dealership.js';
 import { listAccounts } from '../services/accounts.js';
 import { listVehicles, updateVehicle, vehicleTitle } from '../services/inventory.js';
@@ -44,7 +45,7 @@ const TOOLS = [
         accounts: listAccounts().map((a) => ({ platform: a.platform, name: a.display_name, mode: a.mode, enabled: a.enabled })),
         posts_by_status: statusCounts(),
         inbox: inboxCounts(),
-        inventory: get(`SELECT SUM(status='available') AS available, SUM(status='sold') AS sold, COUNT(*) AS total FROM vehicles`),
+        inventory: get(`SELECT SUM(status='available') AS available, SUM(status='sold') AS sold, COUNT(*) AS total FROM vehicles WHERE dealership_id = ?`, tenantId()),
       };
     },
   },
@@ -148,7 +149,7 @@ const TOOLS = [
         throw new Error('This post needs human approval first (assist mode). Ask the user to approve it in the Approvals tab.');
       }
       if (!['approved', 'scheduled'].includes(post.status)) {
-        run(`UPDATE posts SET status = 'approved' WHERE id = ?`, post_id);
+        run(`UPDATE posts SET status = 'approved' WHERE id = ? AND dealership_id = ?`, post_id, tenantId());
       }
       return brief(await publishPost(post_id, 'bot'));
     },
@@ -194,7 +195,7 @@ const TOOLS = [
     run: async ({ message_id, text }) => {
       if (!getMessage(message_id)) throw new Error('Message not found');
       if (!isAutopilot()) {
-        run('UPDATE inbox_messages SET suggested_reply = ? WHERE id = ?', text, message_id);
+        run('UPDATE inbox_messages SET suggested_reply = ? WHERE id = ? AND dealership_id = ?', text, message_id, tenantId());
         return { sent: false, saved_as_suggestion: true };
       }
       const m = await replyToMessage(message_id, text, 'bot');

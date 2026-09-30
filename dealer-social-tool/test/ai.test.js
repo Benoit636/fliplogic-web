@@ -52,10 +52,10 @@ after(() => server.close());
 beforeEach(() => {
   requests.length = 0;
   copyVariants = null;
-  mods.helpers.setupDb();
 });
 
 test('generator sends a structured-output request with fallbacks and fills missing platforms', async () => {
+  mods.helpers.setupDb();
   copyVariants = [{ platform: 'facebook', title: 'T', content: 'Meet the F-150!', hashtags: ['Ford'], image_idea: 'truck at sunset' }];
   const { getVehicle } = await import('../src/services/inventory.js');
   const res = await mods.generator.generatePostVariants({ postType: 'vehicle_spotlight', vehicle: getVehicle(1), platforms: ['facebook', 'x'] });
@@ -74,6 +74,7 @@ test('generator sends a structured-output request with fallbacks and fills missi
 });
 
 test('the bot runs tools, keeps append-only history, and respects assist mode', async () => {
+  mods.helpers.setupDb();
   responder = (body, n) => {
     if (n === 1) {
       return {
@@ -117,6 +118,7 @@ test('the bot runs tools, keeps append-only history, and respects assist mode', 
 });
 
 test('invalid tool input is reported back to the model instead of crashing', async () => {
+  mods.helpers.setupDb();
   responder = (body, n) =>
     n === 1
       ? { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'tu_1', name: 'schedule_post', input: { post_id: 'abc' } }] }

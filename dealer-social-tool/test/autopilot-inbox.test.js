@@ -1,6 +1,5 @@
-import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { setupDb } from './helpers.js';
+import { tenantTest as test } from './helpers.js';
 import { computeNextRun, createRule, runRule, runDueRules, getRule } from '../src/services/autopilot.js';
 import { updateVehicle } from '../src/services/inventory.js';
 import { listPosts } from '../src/services/posts.js';
@@ -9,28 +8,24 @@ import { fallbackTriage } from '../src/ai/inbox.js';
 import { ingestMessage } from '../src/services/inbox.js';
 import { run } from '../src/db.js';
 
-let fixtures;
-beforeEach(() => {
-  fixtures = setupDb();
+
+test('computeNextRun uses the dealership time zone, including across DST', () => {
+  const tz = 'America/Moncton';
+  const wedNoon = new Date('2026-09-30T15:00:00Z'); // Wednesday 12:00 local (UTC-3)
+  assert.equal(computeNextRun({ days_of_week: [1], time_of_day: '09:30' }, wedNoon, tz), '2026-10-05T12:30:00.000Z');
+  assert.equal(computeNextRun({ days_of_week: [3], time_of_day: '18:00' }, wedNoon, tz), '2026-09-30T21:00:00.000Z');
+  assert.equal(computeNextRun({ days_of_week: [3], time_of_day: '09:00' }, wedNoon, tz), '2026-10-07T12:00:00.000Z');
+  // Clocks fall back on Nov 1: Monday 09:30 is now UTC-4.
+  assert.equal(computeNextRun({ days_of_week: [1], time_of_day: '09:30' }, new Date('2026-10-31T12:00:00Z'), tz), '2026-11-02T13:30:00.000Z');
 });
 
-test('computeNextRun finds the next allowed weekday and time', () => {
-  const from = new Date(2026, 8, 30, 12, 0); // Wednesday noon, local time
-  const next = new Date(computeNextRun({ days_of_week: [1], time_of_day: '09:30' }, from));
-  assert.equal(next.getDay(), 1);
-  assert.equal(next.getHours(), 9);
-  assert.equal(next.getMinutes(), 30);
-  const sameDay = new Date(computeNextRun({ days_of_week: [3], time_of_day: '18:00' }, from));
-  assert.equal(sameDay.getDate(), 30);
-});
-
-test('rules validate input', () => {
+test('rules validate input', (fixtures) => {
   assert.throws(() => createRule({ name: 'x', post_type: 'nope', platforms: ['facebook'] }), /Unknown post type/);
   assert.throws(() => createRule({ name: 'x', post_type: 'promotion', platforms: ['myspace'] }), /platforms/);
   assert.throws(() => createRule({ name: 'x', post_type: 'promotion', platforms: ['facebook'], time_of_day: '25:00' }), /time_of_day/);
 });
 
-test('sold-celebration rule picks the sold car once, then skips', async () => {
+test('sold-celebration rule picks the sold car once, then skips', async (fixtures) => {
   const rule = createRule({ name: 'Sold', post_type: 'sold_celebration', platforms: ['facebook'] });
   assert.equal((await runRule(rule)).skipped, true);
 
@@ -42,7 +37,7 @@ test('sold-celebration rule picks the sold car once, then skips', async () => {
   assert.equal((await runRule(rule)).skipped, true);
 });
 
-test('due rules run from the worker and move their next run forward', async () => {
+test('due rules run from the worker and move their next run forward', async (fixtures) => {
   const rule = createRule({ name: 'Spotlight', post_type: 'vehicle_spotlight', platforms: ['facebook', 'instagram'] });
   run('UPDATE autopilot_rules SET next_run_at = ? WHERE id = ?', new Date(Date.now() - 1000).toISOString(), rule.id);
   await runDueRules();
@@ -50,7 +45,7 @@ test('due rules run from the worker and move their next run forward', async () =
   assert.ok(new Date(getRule(rule.id).next_run_at) > new Date());
 });
 
-test('fallback triage recognises leads, complaints, spam and praise', () => {
+test('fallback triage recognises leads, complaints, spam and praise', (fixtures) => {
   const d = getDealership();
   const t = (text, extra = {}) => fallbackTriage({ text, author: 'Sam Doe', ...extra }, d);
   assert.equal(t('Is this truck still available? What would payments be?').intent, 'lead');
@@ -61,7 +56,7 @@ test('fallback triage recognises leads, complaints, spam and praise', () => {
   assert.match(t('Love it').suggested_reply, /Sam/);
 });
 
-test('autopilot inbox: replies to praise, escalates leads, dismisses spam', async () => {
+test('autopilot inbox: replies to praise, escalates leads, dismisses spam', async (fixtures) => {
   updateDealership({ autonomy: 'autopilot' });
   const praise = await ingestMessage({ platform: 'facebook', author: 'Ann', text: 'Love this car!' });
   const lead = await ingestMessage({ platform: 'facebook', author: 'Bob', text: 'Do you take trade-ins?' });

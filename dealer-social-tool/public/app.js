@@ -3,7 +3,7 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const view = $('#view');
 
-const state = { meta: null, dealership: null, chatId: null };
+const state = { meta: null, dealership: null, me: null, chatId: null };
 try {
   state.chatId = localStorage.getItem('ds.chatId');
 } catch {}
@@ -47,21 +47,35 @@ const STATUS_BADGE = {
 const statusBadge = (s) => `<span class="badge ${STATUS_BADGE[s]?.[1] || ''}">${STATUS_BADGE[s]?.[0] || esc(s)}</span>`;
 
 async function api(method, path, body, { raw = false } = {}) {
+  const headers = { 'x-requested-with': 'fetch' };
+  if (body !== undefined) headers['content-type'] = raw ? 'text/plain' : 'application/json';
   const res = await fetch(`/api${path}`, {
     method,
-    headers: body !== undefined ? { 'content-type': raw ? 'text/plain' : 'application/json' } : {},
+    headers,
     body: body === undefined ? undefined : raw ? body : JSON.stringify(body),
   });
+  if (res.status === 401) {
+    location.href = `/login?next=${encodeURIComponent(location.pathname + location.hash)}`;
+    throw new Error('Please log in');
+  }
   if (res.status === 204) return null;
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || res.statusText);
+  if (!res.ok) throw Object.assign(new Error(data.error || res.statusText), { status: res.status });
   return data;
 }
 
-function toast(message, type = '') {
+function toast(message, type = '', link = null) {
   const el = document.createElement('div');
   el.className = `toast ${type}`;
   el.textContent = message;
+  if (link) {
+    const a = document.createElement('a');
+    a.href = link.href;
+    a.textContent = ` ${link.label} →`;
+    a.style.color = 'inherit';
+    a.style.fontWeight = '700';
+    el.append(a);
+  }
   $('#toast-root').append(el);
   setTimeout(() => el.remove(), type === 'error' ? 6000 : 3500);
 }
@@ -74,7 +88,7 @@ async function act(btn, fn, success) {
     if (success) toast(typeof success === 'function' ? success(result) : success);
     return result;
   } catch (err) {
-    toast(err.message, 'error');
+    toast(err.message, 'error', err.status === 402 ? { href: '#/billing', label: 'See plans' } : null);
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -238,8 +252,18 @@ views.dashboard = async () => {
   const d = await api('GET', '/dashboard');
   const t = d.analytics.totals;
   const inv = Object.fromEntries(d.inventory.map((r) => [r.status, r.n]));
+  const steps = [
+    ['profile', 'Fill in your dealership profile & brand voice', '#/settings'],
+    ['accounts', 'Connect your social accounts', '#/settings'],
+    ['inventory', 'Add your inventory (CSV or feed)', '#/inventory'],
+    ['first_post', 'Publish your first post', '#/studio'],
+    ['autopilot', 'Turn on an autopilot rule', '#/autopilot'],
+  ];
+  const done = steps.filter(([k]) => d.checklist[k]).length;
   view.innerHTML = `
-    ${!d.accounts.length ? `<div class="card" style="margin-bottom:16px">👋 Welcome! Start in <a href="#/settings">Settings</a>: fill in your dealership profile and connect your social accounts. Then add your <a href="#/inventory">inventory</a>.</div>` : ''}
+    ${done < steps.length ? `<div class="card checklist" style="margin-bottom:16px"><div class="card-head"><h2>🚀 Get set up</h2><span class="muted small">${done}/${steps.length} done</span></div>
+      <div class="meter" style="margin-bottom:10px"><div style="width:${(done / steps.length) * 100}%"></div></div>
+      ${steps.map(([k, label, href]) => `<div class="list-item"><span>${d.checklist[k] ? '✅' : '⬜'}</span><a class="grow ${d.checklist[k] ? 'done' : ''}" href="${href}">${label}</a></div>`).join('')}</div>` : ''}
     <div class="kpis">
       <div class="kpi"><div class="label">Needs approval</div><div class="value">${d.post_counts.pending_approval}</div><div class="sub"><a href="#/approvals">Review →</a></div></div>
       <div class="kpi"><div class="label">Scheduled</div><div class="value">${d.post_counts.scheduled}</div><div class="sub"><a href="#/calendar">Calendar →</a></div></div>
@@ -528,7 +552,7 @@ views.inventory = async () => {
   const unit = state.dealership?.distance_unit || 'km';
   view.innerHTML = `<div class="card">
     <div class="card-head"><form id="inv-search" style="flex:1;max-width:340px"><input name="q" placeholder="Search make, model, stock #…" value="${esc(q)}"></form>
-      <div class="actions"><label class="btn small">⬆ Import CSV<input type="file" id="inv-csv" accept=".csv,text/csv" hidden></label><button class="small primary" id="inv-add">+ Add vehicle</button></div></div>
+      <div class="actions">${state.dealership?.inventory_feed_url ? '<button class="small" id="inv-sync">↻ Sync feed now</button>' : ''}<label class="btn small">⬆ Import CSV<input type="file" id="inv-csv" accept=".csv,text/csv" hidden></label><button class="small primary" id="inv-add">+ Add vehicle</button></div></div>
     <div class="table-wrap"><table><tr><th></th><th>Vehicle</th><th>Condition</th><th class="num">Price</th><th class="num">${unit}</th><th>Status</th><th>Last posted</th><th></th></tr>
     ${vehicles.map((v) => `<tr><td>${v.photos[0] ? `<img src="${esc(v.photos[0])}" alt="" style="width:56px;height:42px;object-fit:cover;border-radius:6px">` : ''}</td>
       <td><strong>${esc([v.year, v.make, v.model].join(' '))}</strong> ${esc(v.trim)}<div class="small muted">${esc(v.exterior_color)} ${v.stock_number ? `· #${esc(v.stock_number)}` : ''}</div></td>
@@ -542,6 +566,8 @@ views.inventory = async () => {
     location.hash = `#/inventory?q=${encodeURIComponent(new FormData(e.target).get('q'))}`;
   };
   $('#inv-add').onclick = () => openVehicleEditor(null, route);
+  const sync = $('#inv-sync');
+  if (sync) sync.onclick = () => act(sync, () => api('POST', '/vehicles/sync-feed'), (r) => `Feed synced: ${r.summary}`).then(route);
   $('#inv-csv').onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -651,6 +677,31 @@ views.analytics = async () => {
   $('#an-refresh').onclick = (e) => act(e.target, () => api('POST', '/analytics/refresh'), (r) => `${r.updated} posts updated`).then(route);
 };
 
+const COMMON_TZ = ['America/Moncton', 'America/Halifax', 'America/St_Johns', 'America/Toronto', 'America/New_York', 'America/Chicago', 'America/Winnipeg', 'America/Regina', 'America/Denver', 'America/Edmonton', 'America/Phoenix', 'America/Los_Angeles', 'America/Vancouver', 'America/Anchorage', 'Pacific/Honolulu'];
+function timezones(selected) {
+  const list = COMMON_TZ.includes(selected) ? COMMON_TZ : [selected, ...COMMON_TZ];
+  return list.map((z) => `<option ${z === selected ? 'selected' : ''}>${esc(z)}</option>`).join('');
+}
+
+async function openConnectPicker(stateToken) {
+  let options;
+  try {
+    options = await api('GET', `/oauth/pending/${encodeURIComponent(stateToken)}`);
+  } catch (err) {
+    return toast(err.message, 'error');
+  }
+  const { el, close } = openModal('Choose what to connect', options.length
+    ? `<div class="stack">${options.map((o) => `<label class="check" style="border-radius:8px"><input type="checkbox" value="${o.index}" ${o.already_connected ? '' : 'checked'}> ${pIcon(o.platform)} ${esc(o.display_name)} <span class="small muted">${esc(platformLabel(o.platform))}${o.already_connected ? ' · already connected (refresh token)' : ''}</span></label>`).join('')}
+      <div class="row"><span class="spacer"></span><button class="primary" id="connect-go">Connect selected</button></div></div>`
+    : '<div class="empty">No pages or profiles were found on that login. Make sure you are an admin of the page/location and granted all permissions.</div>');
+  const go = $('#connect-go', el);
+  if (go) go.onclick = () => act(go, () => api('POST', `/oauth/pending/${encodeURIComponent(stateToken)}/connect`, { indexes: $$('input:checked', el).map((i) => Number(i.value)) }), (r) => `${r.connected} account(s) connected`).then((r) => {
+    if (!r) return;
+    close();
+    location.hash = '#/settings';
+  });
+}
+
 views.settings = async () => {
   const [d, accounts] = await Promise.all([api('GET', '/dealership'), api('GET', '/accounts')]);
   const field = (k, l, type = 'input', ph = '') =>
@@ -668,17 +719,38 @@ views.settings = async () => {
         ${field('compliance_notes', 'Compliance / legal line (added when prices are shown)', 'textarea')}
         ${field('language', 'Post language(s)', 'input', 'English, or English and French')}
         <label class="field"><span>Odometer unit</span><select name="distance_unit"><option value="km" ${d.distance_unit === 'km' ? 'selected' : ''}>Kilometres</option><option value="mi" ${d.distance_unit === 'mi' ? 'selected' : ''}>Miles</option></select></label>
+        <label class="field"><span>Time zone (autopilot schedules use it)</span><select name="timezone">${timezones(d.timezone)}</select></label>
+        <label class="field full"><span>Inventory feed URL (CSV from your DMS or website provider — synced every 6 hours, Pro plan)</span><input name="inventory_feed_url" value="${esc(d.inventory_feed_url)}" placeholder="https://…/inventory.csv"></label>
+        <label class="check full" style="border-radius:8px"><input type="checkbox" name="feed_marks_sold" value="1" ${d.feed_marks_sold ? 'checked' : ''}> Mark vehicles as sold when they disappear from the feed (creates “sold” celebration posts)</label>
+        ${d.feed_last_synced_at ? `<div class="full small muted">Last feed sync ${ago(d.feed_last_synced_at)}: ${esc(d.feed_last_result)}</div>` : ''}
         <div class="full row"><span class="spacer"></span><button class="primary">Save profile</button></div>
       </div></form>
-    <div class="card"><div class="card-head"><h2>Social accounts</h2><div class="actions"><button class="primary small" id="acct-add">+ Connect account</button></div></div>
-      <p class="small muted">Simulated accounts let you run the full workflow safely. Switch Facebook and Instagram to <strong>live</strong> with a Page ID / Instagram business ID and a long-lived Page access token from Meta. Other networks run in simulated mode for now.</p>
+    <div class="card"><div class="card-head"><h2>Social accounts</h2><div class="actions"><button class="small" id="acct-add">+ Add manually</button></div></div>
+      <div class="row" style="margin-bottom:10px">${Object.entries(state.meta.oauth).map(([k, o]) => `<button class="${o.configured ? 'primary' : ''} small" data-oauth="${k}" ${o.configured ? '' : 'disabled title="Not configured on this server yet"'}>🔗 Connect ${esc(o.label)}</button>`).join('')}</div>
+      <p class="small muted">Use the Connect buttons to link your real pages in one click. <strong>Simulated</strong> accounts let you try the full workflow without posting anything.</p>
       <div class="table-wrap"><table><tr><th>Platform</th><th>Name</th><th>Mode</th><th>Token</th><th>On</th><th></th></tr>
-      ${accounts.map((a) => `<tr><td>${pIcon(a.platform)} ${esc(platformLabel(a.platform))}</td><td>${esc(a.display_name)}</td><td><span class="badge ${a.mode === 'live' ? 'good' : ''}">${a.mode}</span></td><td class="small muted">${esc(a.token_hint || '—')}</td><td><input type="checkbox" data-aon="${a.id}" ${a.enabled ? 'checked' : ''}></td><td><button class="small" data-aedit="${a.id}">Edit</button> <button class="small danger" data-adel="${a.id}">✕</button></td></tr>`).join('') || '<tr><td colspan="6"><div class="empty">No accounts yet</div></td></tr>'}
-      </table></div></div></div>`;
+      ${accounts.map((a) => `<tr><td>${pIcon(a.platform)} ${esc(platformLabel(a.platform))}</td><td>${esc(a.display_name)}${a.last_error ? `<div class="small" style="color:var(--bad)">⚠️ ${esc(a.last_error)}</div>` : ''}</td><td><span class="badge ${a.mode === 'live' ? 'good' : ''}">${a.mode}</span></td><td class="small muted">${esc(a.token_hint || '—')}</td><td><input type="checkbox" data-aon="${a.id}" ${a.enabled ? 'checked' : ''}></td><td><button class="small" data-aedit="${a.id}">Edit</button> <button class="small danger" data-adel="${a.id}">✕</button></td></tr>`).join('') || '<tr><td colspan="6"><div class="empty">No accounts yet</div></td></tr>'}
+      </table></div></div>
+    <form class="card" id="pw-form"><div class="card-head"><h2>Your password</h2></div><div class="form-grid">
+      <label class="field"><span>Current password</span><input type="password" name="current_password" required autocomplete="current-password"></label>
+      <label class="field"><span>New password</span><input type="password" name="new_password" required minlength="8" autocomplete="new-password"></label>
+      <div class="full row"><span class="spacer"></span><button>Change password</button></div></div></form></div>`;
   $('#dealer-form').onsubmit = (e) => {
     e.preventDefault();
-    act(e.submitter, () => api('PUT', '/dealership', Object.fromEntries(new FormData(e.target))), 'Profile saved').then(loadShell);
+    const body = Object.fromEntries(new FormData(e.target));
+    body.feed_marks_sold = !!body.feed_marks_sold;
+    act(e.submitter, () => api('PUT', '/dealership', body), 'Profile saved').then(loadShell);
   };
+  $('#pw-form').onsubmit = (e) => {
+    e.preventDefault();
+    act(e.submitter, () => fetch('/api/me/password', { method: 'POST', headers: { 'content-type': 'application/json', 'x-requested-with': 'fetch' }, body: JSON.stringify(Object.fromEntries(new FormData(e.target))) }).then(async (r) => {
+      if (!r.ok) throw new Error((await r.json()).error);
+      e.target.reset();
+    }), 'Password changed');
+  };
+  const params = new URLSearchParams(location.hash.split('?')[1] || '');
+  if (params.get('connect_error')) toast(`Connection failed: ${params.get('connect_error')}`, 'error');
+  if (params.get('connect')) openConnectPicker(params.get('connect'));
   const accountEditor = (a) => {
     const { el, close } = openModal(a ? 'Edit account' : 'Connect account', `<form class="stack" id="acct-form">
       <label class="field"><span>Platform</span><select name="platform" ${a ? 'disabled' : ''}>${Object.entries(state.meta.platforms).map(([k, p]) => `<option value="${k}" ${a?.platform === k ? 'selected' : ''}>${esc(p.label)}${p.live_supported ? '' : ' (simulated only)'}</option>`).join('')}</select></label>
@@ -701,12 +773,109 @@ views.settings = async () => {
   $('#acct-add').onclick = () => accountEditor(null);
   view.onclick = (e) => {
     const b = e.target.closest('button');
+    if (b?.dataset.oauth) act(b, () => api('POST', `/oauth/${b.dataset.oauth}/start`)).then((r) => r && (location.href = r.url));
     if (b?.dataset.aedit) accountEditor(accounts.find((a) => a.id === Number(b.dataset.aedit)));
     if (b?.dataset.adel && confirm('Disconnect this account?')) act(b, () => api('DELETE', `/accounts/${b.dataset.adel}`)).then(route);
   };
   view.onchange = (e) => {
     const id = e.target.dataset?.aon;
     if (id) act(null, () => api('PATCH', `/accounts/${id}`, { enabled: e.target.checked }));
+  };
+};
+
+views.team = async () => {
+  const team = await api('GET', '/team');
+  const isOwner = state.me?.role === 'owner';
+  const roleSelect = (m) =>
+    isOwner && m.id !== state.me.user.id
+      ? `<select data-role="${m.id}" style="width:auto">${['owner', 'manager', 'staff'].map((r) => `<option ${r === m.role ? 'selected' : ''}>${r}</option>`).join('')}</select>`
+      : `<span class="badge">${esc(m.role)}</span>`;
+  view.innerHTML = `<div class="stack">
+    <div class="card"><div class="card-head"><h2>Team members</h2><span class="small muted">Owners manage billing & team · Managers approve, publish and configure · Staff draft posts and work the inbox</span></div>
+      <div class="table-wrap"><table><tr><th>Name</th><th>Email</th><th>Role</th><th>Last login</th><th></th></tr>
+      ${team.members.map((m) => `<tr><td>${esc(m.name || '—')}</td><td>${esc(m.email)}</td><td>${roleSelect(m)}</td><td class="small">${m.last_login_at ? ago(m.last_login_at) : 'never'}</td><td>${isOwner && m.id !== state.me.user.id ? `<button class="small danger" data-remove="${m.id}">Remove</button>` : ''}</td></tr>`).join('')}
+      </table></div></div>
+    ${isOwner ? `<form class="card" id="invite-form"><div class="card-head"><h2>Invite someone</h2></div><div class="row">
+      <input type="email" name="email" placeholder="name@dealership.com" required style="flex:1;min-width:200px">
+      <select name="role" style="width:auto"><option value="staff">Staff</option><option value="manager">Manager</option><option value="owner">Owner</option></select>
+      <button class="primary">Send invite</button></div><div id="invite-link" class="small" style="margin-top:8px"></div></form>` : ''}
+    ${team.invites.length ? `<div class="card"><div class="card-head"><h2>Pending invites</h2></div>${team.invites.map((i) => `<div class="list-item"><div class="grow">${esc(i.email)} <span class="badge">${esc(i.role)}</span><div class="small muted">expires ${fmtDate(i.expires_at)}</div></div>${isOwner ? `<button class="small" data-revoke="${i.id}">Revoke</button>` : ''}</div>`).join('')}</div>` : ''}
+  </div>`;
+  const inviteForm = $('#invite-form');
+  if (inviteForm)
+    inviteForm.onsubmit = async (e) => {
+      e.preventDefault();
+      const r = await act(e.submitter, () => api('POST', '/team/invites', Object.fromEntries(new FormData(e.target))));
+      if (!r) return;
+      toast(r.emailed ? 'Invite emailed' : 'Invite created');
+      $('#invite-link').innerHTML = `Share this link if the email doesn’t arrive: <input readonly value="${esc(r.invite_url)}" style="margin-top:4px">`;
+      setTimeout(route, r.emailed ? 0 : 60_000);
+    };
+  view.onclick = (e) => {
+    const b = e.target.closest('button');
+    if (b?.dataset.remove && confirm('Remove this person from the dealership?')) act(b, () => api('DELETE', `/team/members/${b.dataset.remove}`), 'Removed').then(route);
+    if (b?.dataset.revoke) act(b, () => api('DELETE', `/team/invites/${b.dataset.revoke}`), 'Invite revoked').then(route);
+  };
+  view.onchange = (e) => {
+    const uid = e.target.dataset?.role;
+    if (uid) act(null, () => api('PATCH', `/team/members/${uid}`, { role: e.target.value }), 'Role updated').then(route);
+  };
+};
+
+views.billing = async () => {
+  const b = await api('GET', '/billing');
+  const params = new URLSearchParams(location.hash.split('?')[1] || '');
+  if (params.get('checkout') === 'success') toast('Thanks! Your subscription is active 🎉');
+  let interval = params.get('interval') === 'year' ? 'year' : b.billing_interval || 'month';
+  const isOwner = state.me?.role === 'owner';
+  const statusText = {
+    trialing: `Free trial — ends ${b.trial_ends_at ? new Date(b.trial_ends_at).toLocaleDateString() : 'soon'}`,
+    active: `Active — renews ${b.current_period_end ? new Date(b.current_period_end).toLocaleDateString() : ''}`,
+    past_due: 'Payment failed — please update your card',
+    canceled: 'Canceled',
+    unpaid: 'Unpaid',
+    comped: 'Complimentary plan',
+  }[b.subscription_status] || b.subscription_status;
+  const meter = (label, used, limit) => {
+    const pct = limit ? Math.min(100, (used / limit) * 100) : 100;
+    return `<div class="stack" style="gap:4px"><div class="row small"><span>${label}</span><span class="spacer"></span><span class="muted">${num(used)} / ${limit ? num(limit) : '—'}</span></div><div class="meter ${pct >= 100 ? 'full' : ''}"><div style="width:${pct}%"></div></div></div>`;
+  };
+  const render = () => {
+    view.innerHTML = `<div class="stack">
+      <div class="card"><div class="card-head"><h2>Current plan: ${esc(b.planName)}</h2><span class="badge ${b.active ? 'good' : 'bad'}">${esc(statusText)}</span>
+        <div class="actions">${isOwner && b.has_billing_account && b.billing_enabled ? '<button class="small" id="portal">Manage billing, invoices & card</button>' : ''}</div></div>
+        ${b.reason ? `<div class="banner bad">${esc(b.reason)}</div>` : ''}
+        <div class="grid cols-2">
+          ${meter('AI-written posts this month', b.usage.aiPostsThisMonth, b.limits.aiPostsPerMonth)}
+          ${meter('AI assistant messages this month', b.usage.aiChatsThisMonth, b.limits.aiChatTurnsPerMonth)}
+          ${meter('Social accounts', b.usage.socialAccounts, b.limits.socialAccounts)}
+          ${meter('Team members', b.usage.users, b.limits.users)}
+          ${meter('Autopilot rules', b.usage.autopilotRules, b.limits.autopilotRules)}
+        </div></div>
+      <div class="row" style="justify-content:center"><div class="tabs" style="margin:0"><button data-int="month" class="${interval === 'month' ? 'active' : ''}">Monthly</button><button data-int="year" class="${interval === 'year' ? 'active' : ''}">Yearly — 2 months free</button></div></div>
+      <div class="l-pricing">${Object.entries(b.plans).map(([key, p]) => {
+        const current = key === b.plan && ['active', 'past_due', 'comped'].includes(b.subscription_status);
+        const price = interval === 'year' ? Math.round(p.yearly / 12) : p.monthly;
+        return `<div class="card l-plan ${p.popular ? 'popular' : ''}">
+          ${p.popular ? '<span class="badge info">Most popular</span>' : ''}<h3>${esc(p.name)}</h3><p class="small muted">${esc(p.tagline)}</p>
+          <div class="l-price">$${price}<span>/mo</span></div><div class="small muted">${interval === 'year' ? `billed $${p.yearly.toLocaleString()} yearly` : 'billed monthly'} · USD</div>
+          <ul>${p.highlights.map((h) => `<li>${esc(h)}</li>`).join('')}</ul>
+          ${current ? '<button disabled>Current plan</button>' : isOwner ? `<button class="${p.popular ? 'primary' : ''}" data-plan="${key}">${b.subscription_status === 'active' ? 'Switch' : 'Choose'} ${esc(p.name)}</button>` : '<span class="small muted">Ask the owner to change plans</span>'}
+        </div>`;
+      }).join('')}</div>
+      ${b.billing_enabled ? '' : `<p class="small muted" style="text-align:center">Online payment isn’t switched on for this server yet — contact <a href="mailto:${esc(state.meta.support_email)}">${esc(state.meta.support_email)}</a> to activate a plan.</p>`}
+    </div>`;
+  };
+  render();
+  view.onclick = (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    if (btn.dataset.int) {
+      interval = btn.dataset.int;
+      render();
+    }
+    if (btn.dataset.plan) act(btn, () => api('POST', '/billing/checkout', { plan: btn.dataset.plan, interval })).then((r) => r?.url && (location.href = r.url));
+    if (btn.id === 'portal') act(btn, () => api('POST', '/billing/portal')).then((r) => r?.url && (location.href = r.url));
   };
 };
 
@@ -723,12 +892,63 @@ const TITLES = {
   autopilot: 'Autopilot',
   analytics: 'Analytics',
   settings: 'Settings',
+  team: 'Team',
+  billing: 'Plan & Billing',
 };
 
+function renderBanner() {
+  const d = state.me?.dealership;
+  if (!d) return ($('#banner-root').innerHTML = '');
+  const e = d.entitlements;
+  let html = '';
+  if (!e.active) html = `<div class="banner bad">⛔ ${esc(e.reason)} <a class="btn small" href="#/billing">Choose a plan</a></div>`;
+  else if (d.subscription_status === 'past_due') html = `<div class="banner bad">⚠️ ${esc(e.reason)} <a class="btn small" href="#/billing">Update card</a></div>`;
+  else if (d.subscription_status === 'trialing' && d.trial_ends_at) {
+    const days = Math.max(0, Math.ceil((new Date(d.trial_ends_at) - Date.now()) / 86_400_000));
+    html = `<div class="banner info">🎁 Free trial of ${esc(e.planName)}: ${days} day${days === 1 ? '' : 's'} left. <a class="btn small" href="#/billing">Choose a plan</a></div>`;
+  }
+  $('#banner-root').innerHTML = html;
+}
+
+function renderUserBox() {
+  const me = state.me;
+  const options = me.dealerships.map((d) => `<option value="${d.id}" ${d.id === me.dealership?.id ? 'selected' : ''}>${esc(d.name)}</option>`).join('');
+  $('#user-box').innerHTML = `
+    ${me.dealerships.length > 1 || me.user.is_superadmin ? `<select id="dealer-switch">${options}${me.dealership && !me.dealerships.some((d) => d.id === me.dealership.id) ? `<option selected>${esc(me.dealership.name)} (support)</option>` : ''}</select>` : ''}
+    <div class="clip">${esc(me.user.name || me.user.email)} · <span class="muted">${esc(me.role || '')}</span></div>
+    <div class="row" style="gap:6px"><button class="small" id="add-rooftop">+ Rooftop</button>${me.user.is_superadmin ? '<a class="btn small" href="/admin">Admin</a>' : ''}<button class="small" id="logout">Log out</button></div>`;
+  const sw = $('#dealer-switch');
+  if (sw) sw.onchange = () => fetch('/api/me/switch', { method: 'POST', headers: { 'content-type': 'application/json', 'x-requested-with': 'fetch' }, body: JSON.stringify({ dealership_id: Number(sw.value) }) }).then(() => (location.hash = '#/dashboard', location.reload()));
+  $('#logout').onclick = () => fetch('/api/auth/logout', { method: 'POST', headers: { 'x-requested-with': 'fetch' } }).then(() => (location.href = '/login'));
+  $('#add-rooftop').onclick = () => {
+    const { el, close } = openModal('Add another dealership (rooftop)', `<form class="stack" id="rooftop-form"><p class="small muted">Each rooftop has its own inventory, accounts, team and subscription. It starts with a free trial.</p>
+      <label class="field"><span>Dealership name</span><input name="name" required></label><div class="row"><span class="spacer"></span><button class="primary">Create</button></div></form>`);
+    $('#rooftop-form', el).onsubmit = (e) => {
+      e.preventDefault();
+      act(e.submitter, () => fetch('/api/me/dealerships', { method: 'POST', headers: { 'content-type': 'application/json', 'x-requested-with': 'fetch' }, body: JSON.stringify({ name: new FormData(e.target).get('name'), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }) }).then(async (r) => {
+        if (!r.ok) throw new Error((await r.json()).error);
+        close();
+        location.hash = '#/settings';
+        location.reload();
+      }));
+    };
+  };
+}
+
 async function loadShell() {
+  const meRes = await fetch('/api/me');
+  if (meRes.status === 401) return (location.href = '/login');
+  state.me = await meRes.json();
+  if (!state.me.dealership) {
+    view.innerHTML = `<div class="card stack" style="max-width:520px"><h2>You’re not part of a dealership yet</h2><p class="muted">Ask your manager for an invite, or create your own dealership.</p><div class="row"><button class="primary" id="add-rooftop">Create a dealership</button><button id="logout">Log out</button></div></div>`;
+    renderUserBox();
+    throw new Error('no dealership');
+  }
   const [meta, dealer] = await Promise.all([api('GET', '/meta'), api('GET', '/dealership')]);
   state.meta = meta;
   state.dealership = dealer;
+  renderUserBox();
+  renderBanner();
   $('#dealer-name').textContent = dealer.name;
   $('#ai-status').innerHTML = meta.ai_enabled
     ? `🟢 AI bot online<br><span class="small">${esc(meta.ai_model)}</span>`
@@ -757,5 +977,5 @@ $('#menu-btn').onclick = () => $('#sidebar').classList.toggle('open');
 window.addEventListener('hashchange', route);
 loadShell()
   .then(route)
-  .catch((err) => (view.innerHTML = `<div class="empty">Could not reach the server: ${esc(err.message)}</div>`));
+  .catch((err) => err.message !== 'no dealership' && (view.innerHTML = `<div class="empty">Could not reach the server: ${esc(err.message)}</div>`));
 setInterval(refreshBadges, 60_000);

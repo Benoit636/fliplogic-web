@@ -5,6 +5,7 @@ import { isAutopilot } from './dealership.js';
 import { getVehicle, markVehiclePosted, markSoldCelebrated, vehicleTitle } from './inventory.js';
 import { createPost } from './posts.js';
 import { httpError } from './errors.js';
+import { consumeAiPosts, addUsage } from './entitlements.js';
 
 /**
  * Turn one idea into a batch of platform-specific posts.
@@ -23,7 +24,16 @@ export async function createPostsFromIdea({
   const vehicle = vehicleId ? getVehicle(Number(vehicleId)) : null;
   if (vehicleId && !vehicle) throw httpError(404, `Vehicle ${vehicleId} not found`);
 
-  const { engine, variants } = await generatePostVariants({ postType, vehicle, platforms, instructions });
+  const reserved = new Set(platforms).size || 1;
+  consumeAiPosts(reserved);
+  let generated;
+  try {
+    generated = await generatePostVariants({ postType, vehicle, platforms, instructions });
+  } catch (err) {
+    addUsage('ai_posts', -reserved); // don't charge the allowance for a failed generation
+    throw err;
+  }
+  const { engine, variants } = generated;
   const batchId = crypto.randomUUID();
   const autoPublish = actor !== 'user' && isAutopilot() && scheduledAt;
   const status = actor === 'user' ? 'draft' : autoPublish ? 'scheduled' : 'pending_approval';

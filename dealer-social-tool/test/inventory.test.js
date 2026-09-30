@@ -1,16 +1,14 @@
-import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { setupDb } from './helpers.js';
+import { tenantTest as test } from './helpers.js';
 import { importVehiclesCsv, listVehicles, parseCsv, updateVehicle, nextPriceDrop, nextVehicleToFeature, markVehiclePosted } from '../src/services/inventory.js';
 
-beforeEach(() => setupDb());
 
-test('parseCsv handles quotes, escaped quotes and CRLF', () => {
+test('parseCsv handles quotes, escaped quotes and CRLF', (fixtures) => {
   const rows = parseCsv('a,b,c\r\n"1,5","say ""hi""",x\r\n');
   assert.deepEqual(rows, [['a', 'b', 'c'], ['1,5', 'say "hi"', 'x']]);
 });
 
-test('CSV import maps common DMS headers and updates existing vehicles by VIN', () => {
+test('CSV import maps common DMS headers and updates existing vehicles by VIN', (fixtures) => {
   const csv = [
     'Stock #,VIN,Year,Make,Model,Trim,Internet Price,Odometer,Exterior Color,Options,Photo URLs',
     'A100,1FTFW1E50NFA00001,2022,Ram,1500,Big Horn,"$41,500","35,000 km",White,"Tow pkg, 4x4",https://img/1.jpg|https://img/2.jpg',
@@ -30,7 +28,7 @@ test('CSV import maps common DMS headers and updates existing vehicles by VIN', 
   assert.equal(listVehicles({ q: 'Ram' })[0].previous_price, 41500);
 });
 
-test('price drops and featured rotation', () => {
+test('price drops and featured rotation', (fixtures) => {
   const [suv, truck] = listVehicles();
   assert.equal(nextPriceDrop(), undefined);
   updateVehicle(truck.id, { price: 42000 });

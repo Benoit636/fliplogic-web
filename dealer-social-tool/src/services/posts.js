@@ -2,6 +2,7 @@ import { PLATFORMS, POST_TYPES, POST_STATUSES } from '../config.js';
 import { all, get, run, updateRow, parseJson, logActivity, nowIso } from '../db.js';
 import { httpError } from './errors.js';
 import { isAutopilot } from './dealership.js';
+import { tenantId } from '../tenant.js';
 
 export function presentPost(row) {
   if (!row) return row;
@@ -37,8 +38,8 @@ export function validatePost(post) {
 }
 
 export function listPosts({ status, platform, from, to, vehicle_id, batch_id, limit = 500 } = {}) {
-  const where = [];
-  const params = [];
+  const where = ['dealership_id = ?'];
+  const params = [tenantId()];
   if (status) {
     const statuses = String(status).split(',');
     where.push(`status IN (${statuses.map(() => '?').join(',')})`);
@@ -65,7 +66,7 @@ export function listPosts({ status, platform, from, to, vehicle_id, batch_id, li
     params.push(to);
   }
   return all(
-    `SELECT * FROM posts ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+    `SELECT * FROM posts WHERE ${where.join(' AND ')}
      ORDER BY COALESCE(scheduled_at, published_at, created_at) DESC, id DESC LIMIT ?`,
     ...params,
     Number(limit),
@@ -73,7 +74,7 @@ export function listPosts({ status, platform, from, to, vehicle_id, batch_id, li
 }
 
 export function getPost(id) {
-  return presentPost(get('SELECT * FROM posts WHERE id = ?', id));
+  return presentPost(get('SELECT * FROM posts WHERE id = ? AND dealership_id = ?', id, tenantId()));
 }
 
 function requirePost(id) {
@@ -89,13 +90,21 @@ function checkDate(value) {
   return d.toISOString();
 }
 
+function checkVehicle(vehicleId) {
+  if (vehicleId && !get('SELECT id FROM vehicles WHERE id = ? AND dealership_id = ?', vehicleId, tenantId())) {
+    throw httpError(400, `Vehicle ${vehicleId} not found`);
+  }
+}
+
 export function createPost(input, actor = 'user') {
   if (!PLATFORMS[input.platform]) throw httpError(400, `Unknown platform "${input.platform}"`);
+  checkVehicle(input.vehicle_id);
   const postType = POST_TYPES[input.post_type] ? input.post_type : 'custom';
   const status = input.status && POST_STATUSES.includes(input.status) ? input.status : 'draft';
   const { lastInsertRowid } = run(
-    `INSERT INTO posts (platform, post_type, title, content, hashtags, media, image_idea, vehicle_id, status, source, batch_id, scheduled_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO posts (dealership_id, platform, post_type, title, content, hashtags, media, image_idea, vehicle_id, status, source, batch_id, scheduled_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    tenantId(),
     input.platform,
     postType,
     input.title || '',
@@ -124,6 +133,7 @@ export function updatePost(id, fields, actor = 'user') {
   if (patch.media) patch.media = JSON.stringify(patch.media);
   if (patch.scheduled_at !== undefined) patch.scheduled_at = checkDate(patch.scheduled_at);
   if (patch.platform && !PLATFORMS[patch.platform]) throw httpError(400, 'Unknown platform');
+  checkVehicle(patch.vehicle_id);
   updateRow('posts', id, patch, ['platform', 'post_type', 'title', 'content', 'hashtags', 'media', 'image_idea', 'vehicle_id', 'scheduled_at']);
   // The bot editing an approved post sends it back for human review in assist mode.
   if (actor === 'bot' && !isAutopilot() && ['approved', 'scheduled'].includes(post.status)) {
@@ -136,7 +146,7 @@ export function updatePost(id, fields, actor = 'user') {
 export function deletePost(id, actor = 'user') {
   const post = requirePost(id);
   if (post.status === 'publishing') throw httpError(409, 'Post is being published right now');
-  run('DELETE FROM posts WHERE id = ?', id);
+  run('DELETE FROM posts WHERE id = ? AND dealership_id = ?', id, tenantId());
   logActivity(actor, 'post.deleted', `#${id}`);
 }
 
@@ -194,7 +204,12 @@ export function unschedulePost(id, actor = 'user') {
 
 export function markPublishing(id) {
   // Atomic claim so two workers never publish the same post.
-  const res = run(`UPDATE posts SET status = 'publishing', updated_at = ? WHERE id = ? AND status IN ('scheduled', 'approved')`, nowIso(), id);
+  const res = run(
+    `UPDATE posts SET status = 'publishing', updated_at = ? WHERE id = ? AND dealership_id = ? AND status IN ('scheduled', 'approved')`,
+    nowIso(),
+    id,
+    tenantId(),
+  );
   return res.changes === 1;
 }
 
@@ -213,15 +228,20 @@ export function markFailed(id, error) {
 }
 
 export function updateMetrics(id, metrics) {
-  run('UPDATE posts SET metrics = ? WHERE id = ?', JSON.stringify(metrics), id);
+  run('UPDATE posts SET metrics = ? WHERE id = ? AND dealership_id = ?', JSON.stringify(metrics), id, tenantId());
 }
 
 export function duePosts(now = nowIso()) {
-  return all(`SELECT id FROM posts WHERE status = 'scheduled' AND scheduled_at <= ? ORDER BY scheduled_at`, now).map((r) => r.id);
+  return all(`SELECT id FROM posts WHERE dealership_id = ? AND status = 'scheduled' AND scheduled_at <= ? ORDER BY scheduled_at`, tenantId(), now).map((r) => r.id);
+}
+
+/** Dealerships that have posts due, for the worker. */
+export function dealershipsWithDuePosts(now = nowIso()) {
+  return all(`SELECT DISTINCT dealership_id FROM posts WHERE status = 'scheduled' AND scheduled_at <= ?`, now).map((r) => r.dealership_id);
 }
 
 export function statusCounts() {
   const counts = Object.fromEntries(POST_STATUSES.map((s) => [s, 0]));
-  for (const row of all('SELECT status, COUNT(*) AS n FROM posts GROUP BY status')) counts[row.status] = row.n;
+  for (const row of all('SELECT status, COUNT(*) AS n FROM posts WHERE dealership_id = ? GROUP BY status', tenantId())) counts[row.status] = row.n;
   return counts;
 }

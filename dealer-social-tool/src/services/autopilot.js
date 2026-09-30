@@ -3,6 +3,10 @@ import { all, get, run, updateRow, parseJson, logActivity, nowIso } from '../db.
 import { createPostsFromIdea } from './content.js';
 import { nextNewArrival, nextPriceDrop, nextSoldToCelebrate, nextVehicleToFeature } from './inventory.js';
 import { httpError } from './errors.js';
+import { tenantId } from '../tenant.js';
+import { localParts, zonedToDate } from '../time.js';
+import { getDealership } from './dealership.js';
+import { requireRoom } from './entitlements.js';
 
 const VEHICLE_PICKERS = {
   vehicle_spotlight: nextVehicleToFeature,
@@ -21,15 +25,17 @@ export function presentRule(row) {
   };
 }
 
-/** Next run time strictly after `from`, using the server's local time zone. */
-export function computeNextRun(rule, from = new Date()) {
+/** Next run time strictly after `from`, on the dealership's local clock. */
+export function computeNextRun(rule, from = new Date(), timeZone = getDealership().timezone) {
   const days = rule.days_of_week?.length ? rule.days_of_week : [0, 1, 2, 3, 4, 5, 6];
-  const [h, m] = String(rule.time_of_day || '10:00').split(':').map(Number);
-  for (let offset = 0; offset <= 7; offset++) {
-    const candidate = new Date(from);
-    candidate.setDate(candidate.getDate() + offset);
-    candidate.setHours(h, m || 0, 0, 0);
-    if (candidate > from && days.includes(candidate.getDay())) return candidate.toISOString();
+  const [hour, minute] = String(rule.time_of_day || '10:00').split(':').map(Number);
+  const today = localParts(from, timeZone);
+  for (let offset = 0; offset <= 8; offset++) {
+    // Noon UTC on the local calendar day avoids DST edge cases when stepping days.
+    const day = new Date(Date.UTC(today.year, today.month - 1, today.day + offset, 12));
+    const weekday = day.getUTCDay();
+    const candidate = zonedToDate({ year: day.getUTCFullYear(), month: day.getUTCMonth() + 1, day: day.getUTCDate(), hour, minute }, timeZone);
+    if (candidate > from && days.includes(weekday)) return candidate.toISOString();
   }
   return null;
 }
@@ -50,17 +56,18 @@ function validate(input) {
 }
 
 export function listRules() {
-  return all('SELECT * FROM autopilot_rules ORDER BY id').map(presentRule);
+  return all('SELECT * FROM autopilot_rules WHERE dealership_id = ? ORDER BY id', tenantId()).map(presentRule);
 }
 
 export function getRule(id) {
-  return presentRule(get('SELECT * FROM autopilot_rules WHERE id = ?', id));
+  return presentRule(get('SELECT * FROM autopilot_rules WHERE id = ? AND dealership_id = ?', id, tenantId()));
 }
 
 export function createRule(input, actor = 'user') {
   if (!input.name) throw httpError(400, 'name is required');
   if (!input.post_type || !input.platforms) throw httpError(400, 'post_type and platforms are required');
   validate(input);
+  requireRoom('autopilotRules', listRules().length, 'autopilot rules');
   const rule = {
     name: input.name,
     post_type: input.post_type,
@@ -71,8 +78,9 @@ export function createRule(input, actor = 'user') {
     enabled: input.enabled === false ? 0 : 1,
   };
   const { lastInsertRowid } = run(
-    `INSERT INTO autopilot_rules (name, post_type, platforms, days_of_week, time_of_day, instructions, enabled, next_run_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO autopilot_rules (dealership_id, name, post_type, platforms, days_of_week, time_of_day, instructions, enabled, next_run_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    tenantId(),
     rule.name,
     rule.post_type,
     JSON.stringify(rule.platforms),
@@ -104,13 +112,13 @@ export function updateRule(id, input, actor = 'user') {
 }
 
 export function deleteRule(id) {
-  run('DELETE FROM autopilot_rules WHERE id = ?', id);
+  run('DELETE FROM autopilot_rules WHERE id = ? AND dealership_id = ?', id, tenantId());
 }
 
 export async function runRule(rule, actor = 'autopilot') {
   const picker = VEHICLE_PICKERS[rule.post_type];
   const vehicle = picker ? picker() : null;
-  run('UPDATE autopilot_rules SET last_run_at = ?, next_run_at = ? WHERE id = ?', nowIso(), computeNextRun(rule), rule.id);
+  run('UPDATE autopilot_rules SET last_run_at = ?, next_run_at = ? WHERE id = ? AND dealership_id = ?', nowIso(), computeNextRun(rule), rule.id, tenantId());
   logActivity(actor, 'autopilot.run', rule.name);
   if (picker && !vehicle) {
     logActivity(actor, 'autopilot.skipped', `${rule.name}: no matching vehicle right now`);
@@ -129,7 +137,11 @@ export async function runRule(rule, actor = 'autopilot') {
 }
 
 export async function runDueRules(now = new Date()) {
-  const due = all(`SELECT * FROM autopilot_rules WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ?`, now.toISOString()).map(presentRule);
+  const due = all(
+    `SELECT * FROM autopilot_rules WHERE dealership_id = ? AND enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ?`,
+    tenantId(),
+    now.toISOString(),
+  ).map(presentRule);
   const results = [];
   for (const rule of due) {
     try {
@@ -139,4 +151,16 @@ export async function runDueRules(now = new Date()) {
     }
   }
   return results;
+}
+
+/** Dealerships with at least one rule due, for the worker. */
+export function dealershipsWithDueRules(now = new Date()) {
+  return all(`SELECT DISTINCT dealership_id FROM autopilot_rules WHERE enabled = 1 AND next_run_at <= ?`, now.toISOString()).map((r) => r.dealership_id);
+}
+
+/** Recompute next runs after the dealership changes time zone. */
+export function rescheduleAllRules() {
+  for (const rule of listRules()) {
+    run('UPDATE autopilot_rules SET next_run_at = ? WHERE id = ? AND dealership_id = ?', computeNextRun(rule), rule.id, tenantId());
+  }
 }

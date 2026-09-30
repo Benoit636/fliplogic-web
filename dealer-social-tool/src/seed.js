@@ -1,5 +1,8 @@
 // Loads a demo dealership so you can explore every screen: `npm run seed`
-import { openDb, get, run } from './db.js';
+// Log in with demo@example.com / demo12345
+import { openDb, run } from './db.js';
+import { runWithTenant } from './tenant.js';
+import { signup, getUserByEmail } from './services/auth.js';
 import { updateDealership } from './services/dealership.js';
 import { createAccount } from './services/accounts.js';
 import { createVehicle } from './services/inventory.js';
@@ -7,13 +10,17 @@ import { createRule } from './services/autopilot.js';
 
 openDb();
 
-if (get('SELECT COUNT(*) AS n FROM vehicles').n > 0) {
-  console.log('Database already has inventory — skipping seed. Delete the database file to start fresh.');
+const DEMO_EMAIL = process.env.DEMO_EMAIL || 'demo@example.com';
+const DEMO_PASSWORD = process.env.DEMO_PASSWORD || 'demo12345';
+if (getUserByEmail(DEMO_EMAIL)) {
+  console.log(`${DEMO_EMAIL} already exists — skipping seed.`);
   process.exit(0);
 }
+const { dealership } = signup({ name: 'Demo Manager', email: DEMO_EMAIL, password: DEMO_PASSWORD, dealershipName: 'Riverside Motors', timezone: 'America/Moncton' });
+
+runWithTenant(dealership.id, () => {
 
 updateDealership({
-  name: 'Riverside Motors',
   brands: 'Volkswagen, pre-owned all makes',
   city: 'Moncton, NB',
   address: '123 Main Street',
@@ -53,3 +60,5 @@ createRule({ name: 'Sold celebrations', post_type: 'sold_celebration', platforms
 createRule({ name: 'Weekly service tip', post_type: 'service_tip', platforms: ['facebook', 'google_business'], days_of_week: [3], time_of_day: '09:30', enabled: false });
 
 console.log(`Seeded Riverside Motors demo: ${created.length} vehicles, 4 simulated accounts, 4 autopilot rules.`);
+console.log(`Log in at /login with ${DEMO_EMAIL} / ${DEMO_PASSWORD}`);
+});

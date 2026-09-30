@@ -15,17 +15,52 @@ function loadDotEnv(file = path.resolve(process.cwd(), '.env')) {
 
 loadDotEnv();
 
+const env = process.env;
+const list = (v) => (v || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+
 export const config = {
-  port: Number(process.env.PORT || 3000),
-  adminPassword: process.env.ADMIN_PASSWORD || '',
-  databasePath: process.env.DATABASE_PATH || './data/dealer-social.db',
-  anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
-  aiModel: process.env.AI_MODEL || 'claude-opus-5-5',
-  schedulerIntervalSeconds: Number(process.env.SCHEDULER_INTERVAL_SECONDS || 30),
-  metaVerifyToken: process.env.META_VERIFY_TOKEN || '',
-  metaAppSecret: process.env.META_APP_SECRET || '',
-  metaGraphVersion: process.env.META_GRAPH_VERSION || 'v21.0',
+  env: env.NODE_ENV || 'development',
+  port: Number(env.PORT || 3000),
+  appUrl: (env.APP_URL || `http://localhost:${env.PORT || 3000}`).replace(/\/$/, ''),
+  appSecret: env.APP_SECRET || 'dev-insecure-secret-change-me',
+  productName: env.PRODUCT_NAME || 'Dealer Social',
+  supportEmail: env.SUPPORT_EMAIL || 'support@example.com',
+  superadminEmails: list(env.SUPERADMIN_EMAILS),
+  databasePath: env.DATABASE_PATH || './data/dealer-social.db',
+  backupDir: env.BACKUP_DIR || './data/backups',
+  trialDays: Number(env.TRIAL_DAYS || 14),
+
+  anthropicApiKey: env.ANTHROPIC_API_KEY || '',
+  aiModel: env.AI_MODEL || 'claude-opus-5-5',
+  schedulerIntervalSeconds: Number(env.SCHEDULER_INTERVAL_SECONDS || 30),
+
+  stripeSecretKey: env.STRIPE_SECRET_KEY || '',
+  stripeWebhookSecret: env.STRIPE_WEBHOOK_SECRET || '',
+  stripePrices: {
+    starter: { month: env.STRIPE_PRICE_STARTER_MONTHLY || '', year: env.STRIPE_PRICE_STARTER_YEARLY || '' },
+    pro: { month: env.STRIPE_PRICE_PRO_MONTHLY || '', year: env.STRIPE_PRICE_PRO_YEARLY || '' },
+    elite: { month: env.STRIPE_PRICE_ELITE_MONTHLY || '', year: env.STRIPE_PRICE_ELITE_YEARLY || '' },
+  },
+
+  emailFrom: env.EMAIL_FROM || 'Dealer Social <no-reply@example.com>',
+  resendApiKey: env.RESEND_API_KEY || '',
+
+  metaAppId: env.META_APP_ID || '',
+  metaAppSecret: env.META_APP_SECRET || '',
+  metaVerifyToken: env.META_VERIFY_TOKEN || '',
+  metaGraphVersion: env.META_GRAPH_VERSION || 'v21.0',
+  googleClientId: env.GOOGLE_CLIENT_ID || '',
+  googleClientSecret: env.GOOGLE_CLIENT_SECRET || '',
+  tiktokClientKey: env.TIKTOK_CLIENT_KEY || '',
+  tiktokClientSecret: env.TIKTOK_CLIENT_SECRET || '',
+  linkedinClientId: env.LINKEDIN_CLIENT_ID || '',
+  linkedinClientSecret: env.LINKEDIN_CLIENT_SECRET || '',
+  linkedinVersion: env.LINKEDIN_VERSION || '202608',
+  xClientId: env.X_CLIENT_ID || '',
+  xClientSecret: env.X_CLIENT_SECRET || '',
 };
+
+export const isProduction = config.env === 'production';
 
 export const PLATFORMS = {
   facebook: { label: 'Facebook', maxChars: 63206, requiresMedia: false, maxHashtags: 5 },

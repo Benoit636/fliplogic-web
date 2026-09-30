@@ -1,5 +1,10 @@
 // "Dealer Social" bot: a conversational agent that runs the dealership's social media with tools.
 import { all, run, parseJson, logActivity } from '../db.js';
+import { tenantId } from '../tenant.js';
+import { formatOffset } from '../time.js';
+import { getDealership } from '../services/dealership.js';
+import { requireFeature, usageCount, addUsage } from '../services/entitlements.js';
+import { httpError } from '../services/errors.js';
 import { POST_TYPES } from '../config.js';
 import { aiEnabled, getClient, baseParams, AiRefusalError } from './client.js';
 import { TOOL_DEFINITIONS, executeTool, PLATFORM_LIST } from './tools.js';
@@ -25,24 +30,20 @@ How you work:
 Platforms: ${PLATFORM_LIST}.
 Post types: ${Object.entries(POST_TYPES).map(([k, v]) => `${k} (${v})`).join(', ')}.`;
 
-function timeHeader(now = new Date()) {
-  const offsetMin = -now.getTimezoneOffset();
-  const sign = offsetMin >= 0 ? '+' : '-';
-  const pad = (n) => String(Math.floor(Math.abs(n))).padStart(2, '0');
-  const offset = `${sign}${pad(offsetMin / 60)}:${pad(offsetMin % 60)}`;
-  const local = now.toLocaleString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-  return `[Current local time: ${local} (UTC offset ${offset})]`;
+function timeHeader(now = new Date(), timeZone = getDealership().timezone) {
+  const local = now.toLocaleString('en-US', { timeZone, weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  return `[Current local time: ${local} (${timeZone}, UTC offset ${formatOffset(now, timeZone)})]`;
 }
 
 function loadHistory(conversationId) {
-  return all('SELECT role, content FROM chat_messages WHERE conversation_id = ? ORDER BY id', conversationId).map((r) => ({
+  return all('SELECT role, content FROM chat_messages WHERE dealership_id = ? AND conversation_id = ? ORDER BY id', tenantId(), conversationId).map((r) => ({
     role: r.role,
     content: parseJson(r.content, r.content),
   }));
 }
 
 function save(conversationId, role, content) {
-  run('INSERT INTO chat_messages (conversation_id, role, content) VALUES (?, ?, ?)', conversationId, role, JSON.stringify(content));
+  run('INSERT INTO chat_messages (dealership_id, conversation_id, role, content) VALUES (?, ?, ?, ?)', tenantId(), conversationId, role, JSON.stringify(content));
 }
 
 /** Messages as the UI shows them: user text + assistant text, with the tools the bot used. */
@@ -75,6 +76,11 @@ export async function chat(conversationId, userText) {
     };
   }
 
+  const plan = requireFeature('assistant');
+  if (usageCount('ai_chat_turns') >= plan.limits.aiChatTurnsPerMonth) {
+    throw httpError(402, 'Monthly AI assistant allowance reached. Upgrade your plan for more.');
+  }
+
   // History is append-only so earlier turns (including thinking blocks) are replayed exactly as returned.
   const messages = loadHistory(conversationId);
   const userMessage = { role: 'user', content: [{ type: 'text', text: `${timeHeader()}\n${userText}` }] };
@@ -84,6 +90,7 @@ export async function chat(conversationId, userText) {
   const actions = [];
   const replyParts = [];
   for (let turn = 0; turn < MAX_TURNS; turn++) {
+    addUsage('ai_chat_turns');
     const response = await getClient().beta.messages.create({
       ...baseParams('medium'),
       max_tokens: 16000,

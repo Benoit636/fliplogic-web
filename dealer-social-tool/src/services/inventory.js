@@ -1,4 +1,5 @@
 import { all, get, run, updateRow, parseJson, logActivity, nowIso } from '../db.js';
+import { tenantId } from '../tenant.js';
 import { httpError } from './errors.js';
 
 const FIELDS = [
@@ -50,8 +51,8 @@ function normalise(input) {
 }
 
 export function listVehicles({ status, q, limit = 500 } = {}) {
-  const where = [];
-  const params = [];
+  const where = ['dealership_id = ?'];
+  const params = [tenantId()];
   if (status) {
     where.push('status = ?');
     params.push(status);
@@ -61,14 +62,14 @@ export function listVehicles({ status, q, limit = 500 } = {}) {
     params.push(`%${q}%`);
   }
   return all(
-    `SELECT * FROM vehicles ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY created_at DESC, id DESC LIMIT ?`,
+    `SELECT * FROM vehicles WHERE ${where.join(' AND ')} ORDER BY created_at DESC, id DESC LIMIT ?`,
     ...params,
     Number(limit),
   ).map(presentVehicle);
 }
 
 export function getVehicle(id) {
-  return presentVehicle(get('SELECT * FROM vehicles WHERE id = ?', id));
+  return presentVehicle(get('SELECT * FROM vehicles WHERE id = ? AND dealership_id = ?', id, tenantId()));
 }
 
 export function createVehicle(input) {
@@ -76,7 +77,8 @@ export function createVehicle(input) {
   if (!v.make || !v.model) throw httpError(400, 'make and model are required');
   const keys = Object.keys(v);
   const { lastInsertRowid } = run(
-    `INSERT INTO vehicles (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`,
+    `INSERT INTO vehicles (dealership_id, ${keys.join(', ')}) VALUES (?, ${keys.map(() => '?').join(', ')})`,
+    tenantId(),
     ...keys.map((k) => v[k]),
   );
   return getVehicle(Number(lastInsertRowid));
@@ -95,46 +97,48 @@ export function updateVehicle(id, input) {
 }
 
 export function markVehiclePosted(id) {
-  run('UPDATE vehicles SET last_posted_at = ? WHERE id = ?', nowIso(), id);
+  run('UPDATE vehicles SET last_posted_at = ? WHERE id = ? AND dealership_id = ?', nowIso(), id, tenantId());
 }
 
 export function deleteVehicle(id) {
-  run('DELETE FROM vehicles WHERE id = ?', id);
+  run('DELETE FROM vehicles WHERE id = ? AND dealership_id = ?', id, tenantId());
 }
 
 /** Vehicle that has gone the longest without being featured. */
 export function nextVehicleToFeature() {
   return presentVehicle(
     get(
-      `SELECT * FROM vehicles WHERE status = 'available'
+      `SELECT * FROM vehicles WHERE dealership_id = ? AND status = 'available'
        ORDER BY last_posted_at IS NOT NULL, last_posted_at ASC, created_at DESC LIMIT 1`,
+      tenantId(),
     ),
   );
 }
 
 export function nextNewArrival() {
   return presentVehicle(
-    get(`SELECT * FROM vehicles WHERE status = 'available' AND last_posted_at IS NULL ORDER BY created_at DESC LIMIT 1`),
+    get(`SELECT * FROM vehicles WHERE dealership_id = ? AND status = 'available' AND last_posted_at IS NULL ORDER BY created_at DESC LIMIT 1`, tenantId()),
   );
 }
 
 export function nextPriceDrop() {
   return presentVehicle(
     get(
-      `SELECT * FROM vehicles WHERE status = 'available' AND previous_price IS NOT NULL AND price < previous_price
+      `SELECT * FROM vehicles WHERE dealership_id = ? AND status = 'available' AND previous_price IS NOT NULL AND price < previous_price
        AND (last_posted_at IS NULL OR last_posted_at < updated_at) ORDER BY updated_at DESC LIMIT 1`,
+      tenantId(),
     ),
   );
 }
 
 export function nextSoldToCelebrate() {
   return presentVehicle(
-    get(`SELECT * FROM vehicles WHERE status = 'sold' AND sold_celebrated = 0 ORDER BY updated_at DESC LIMIT 1`),
+    get(`SELECT * FROM vehicles WHERE dealership_id = ? AND status = 'sold' AND sold_celebrated = 0 ORDER BY updated_at DESC LIMIT 1`, tenantId()),
   );
 }
 
 export function markSoldCelebrated(id) {
-  run('UPDATE vehicles SET sold_celebrated = 1 WHERE id = ?', id);
+  run('UPDATE vehicles SET sold_celebrated = 1 WHERE id = ? AND dealership_id = ?', id, tenantId());
 }
 
 // --- CSV import (works with typical DMS / inventory feed exports) ---
@@ -187,7 +191,7 @@ const HEADER_ALIASES = {
   status: ['status'],
 };
 
-export function importVehiclesCsv(text) {
+export function importVehiclesCsv(text, { actor = 'user' } = {}) {
   const rows = parseCsv(text);
   if (rows.length < 2) throw httpError(400, 'CSV needs a header row and at least one vehicle');
   const headers = rows[0].map((h) => h.trim().toLowerCase());
@@ -202,25 +206,52 @@ export function importVehiclesCsv(text) {
   let created = 0;
   let updated = 0;
   const errors = [];
+  const seenIds = new Set();
   rows.slice(1).forEach((cells, i) => {
     const input = {};
     for (const [field, idx] of Object.entries(mapping)) input[field] = (cells[idx] ?? '').trim();
     if (!input.status) delete input.status;
     try {
       const existing =
-        (input.vin && get('SELECT id FROM vehicles WHERE vin = ?', input.vin)) ||
-        (input.stock_number && get('SELECT id FROM vehicles WHERE stock_number = ?', input.stock_number));
+        (input.vin && get('SELECT id FROM vehicles WHERE dealership_id = ? AND vin = ?', tenantId(), input.vin)) ||
+        (input.stock_number && get('SELECT id FROM vehicles WHERE dealership_id = ? AND stock_number = ?', tenantId(), input.stock_number));
       if (existing) {
         updateVehicle(existing.id, input);
+        seenIds.add(existing.id);
         updated++;
       } else {
-        createVehicle(input);
+        seenIds.add(createVehicle(input).id);
         created++;
       }
     } catch (err) {
       errors.push({ row: i + 2, error: err.message });
     }
   });
-  logActivity('user', 'inventory.imported', `${created} added, ${updated} updated`);
-  return { created, updated, errors };
+  logActivity(actor, 'inventory.imported', `${created} added, ${updated} updated`);
+  return { created, updated, errors, seenIds };
+}
+
+/**
+ * Pull the dealership's inventory feed (CSV URL from their DMS / website provider).
+ * Vehicles that disappear from the feed are marked sold, which triggers sold-celebration posts.
+ */
+export async function syncInventoryFeed(dealer) {
+  if (!dealer.inventory_feed_url) return null;
+  const res = await fetch(dealer.inventory_feed_url, { signal: AbortSignal.timeout(30_000) });
+  if (!res.ok) throw new Error(`Feed download failed: HTTP ${res.status}`);
+  const text = await res.text();
+  const result = importVehiclesCsv(text, { actor: 'feed' });
+  let sold = 0;
+  // Guard against a broken/empty feed wiping out the whole lot.
+  if (dealer.feed_marks_sold && result.seenIds.size >= 3) {
+    for (const v of all(`SELECT id FROM vehicles WHERE dealership_id = ? AND status = 'available'`, tenantId())) {
+      if (!result.seenIds.has(v.id)) {
+        updateVehicle(v.id, { status: 'sold' });
+        sold++;
+      }
+    }
+  }
+  const summary = `${result.created} added, ${result.updated} updated, ${sold} marked sold${result.errors.length ? `, ${result.errors.length} rows skipped` : ''}`;
+  run('UPDATE dealerships SET feed_last_synced_at = ?, feed_last_result = ? WHERE id = ?', nowIso(), summary, tenantId());
+  return { ...result, seenIds: undefined, sold, summary };
 }
