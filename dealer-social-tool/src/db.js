@@ -242,6 +242,11 @@ const MIGRATIONS = [
   );
   CREATE INDEX idx_chat_conv ON chat_messages(dealership_id, conversation_id, id);
   `,
+  // 2: forward social leads to the dealership's CRM (ADF/XML email)
+  `
+  ALTER TABLE dealerships ADD COLUMN crm_lead_email TEXT NOT NULL DEFAULT '';
+  ALTER TABLE inbox_messages ADD COLUMN forwarded_at TEXT;
+  `,
 ];
 
 let db;
@@ -283,9 +288,18 @@ export function closeDb() {
 
 export const nowIso = () => new Date().toISOString();
 
-export const all = (sql, ...params) => getDb().prepare(sql).all(...params);
-export const get = (sql, ...params) => getDb().prepare(sql).get(...params);
-export const run = (sql, ...params) => getDb().prepare(sql).run(...params);
+export const all = (sql, ...params) =>
+  getDb()
+    .prepare(sql)
+    .all(...params);
+export const get = (sql, ...params) =>
+  getDb()
+    .prepare(sql)
+    .get(...params);
+export const run = (sql, ...params) =>
+  getDb()
+    .prepare(sql)
+    .run(...params);
 
 export function transaction(fn) {
   getDb().exec('BEGIN');
@@ -344,7 +358,10 @@ export function backupDatabase(dir = config.backupDir, keep = 14) {
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `dealer-social-${new Date().toISOString().replace(/[:.]/g, '-')}.db`);
   getDb().prepare('VACUUM INTO ?').run(file);
-  const backups = fs.readdirSync(dir).filter((f) => f.endsWith('.db')).sort();
+  const backups = fs
+    .readdirSync(dir)
+    .filter((f) => f.endsWith('.db'))
+    .sort();
   for (const old of backups.slice(0, Math.max(0, backups.length - keep))) fs.rmSync(path.join(dir, old));
   return file;
 }

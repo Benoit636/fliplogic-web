@@ -1,0 +1,16 @@
+# Self-host on any VPS: docker compose up -d  (put Caddy/Nginx with HTTPS in front)
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_PATH: /data/dealer-social.db
+      BACKUP_DIR: /data/backups
+    ports:
+      - "3000:3000"
+    volumes:
+      - dealer-social-data:/data
+volumes:
+  dealer-social-data:

@@ -49,7 +49,8 @@ const pages = {
       <p class="small"><a href="/forgot">Forgot your password?</a> · New here? <a href="/signup">Start a free trial</a></p>`,
       async (d) => {
         await post('login', d);
-        location.href = params.get('next') || '/app';
+        const next = params.get('next') || '';
+        location.href = next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/\\') ? next : '/app';
       },
     ),
 
@@ -72,7 +73,9 @@ const pages = {
       async (d) => {
         await post('signup', d);
         const plan = params.get('plan');
-        location.href = plan ? `/app#/billing?plan=${encodeURIComponent(plan)}&interval=${encodeURIComponent(params.get('interval') || 'month')}` : '/app#/dashboard';
+        location.href = plan
+          ? `/app#/billing?plan=${encodeURIComponent(plan)}&interval=${encodeURIComponent(params.get('interval') || 'month')}`
+          : '/app#/dashboard';
       },
     );
   },

@@ -6,7 +6,7 @@ import { stripeEnabled } from './services/billing.js';
 import { startWorker, stopWorker } from './services/worker.js';
 
 if (isProduction && config.appSecret === 'dev-insecure-secret-change-me') {
-  console.error('APP_SECRET must be set in production (it encrypts your customers\' social tokens).');
+  console.error("APP_SECRET must be set in production (it encrypts your customers' social tokens).");
   process.exit(1);
 }
 

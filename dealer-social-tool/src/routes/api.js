@@ -27,7 +27,16 @@ import {
 import { createPostsFromIdea } from '../services/content.js';
 import { publishPost, refreshMetrics } from '../services/publisher.js';
 import { listRules, getRule, createRule, updateRule, deleteRule, runRule, rescheduleAllRules } from '../services/autopilot.js';
-import { listMessages, ingestMessage, replyToMessage, dismissMessage, escalateMessage, simulateIncoming, inboxCounts, syncComments } from '../services/inbox.js';
+import {
+  listMessages,
+  ingestMessage,
+  replyToMessage,
+  dismissMessage,
+  escalateMessage,
+  simulateIncoming,
+  inboxCounts,
+  syncComments,
+} from '../services/inbox.js';
 import { analyticsSummary } from '../services/analytics.js';
 import { usageSummary, requireActive, requireFeature } from '../services/entitlements.js';
 import { listTeam, inviteMember, revokeInvite, changeRole, removeMember } from '../services/auth.js';
@@ -237,7 +246,7 @@ api.post('/inbox/simulate', async (req, res) => res.json(await simulateIncoming(
 api.post('/inbox/sync', async (req, res) => res.json({ added: await syncComments() }));
 api.post('/inbox/:id/reply', async (req, res) => res.json(await replyToMessage(id(req), req.body?.text)));
 api.post('/inbox/:id/dismiss', (req, res) => res.json(dismissMessage(id(req))));
-api.post('/inbox/:id/escalate', (req, res) => res.json(escalateMessage(id(req))));
+api.post('/inbox/:id/escalate', async (req, res) => res.json(await escalateMessage(id(req))));
 
 // --- analytics ---
 api.get('/analytics', (req, res) => res.json(analyticsSummary(Math.min(365, Math.max(1, Number(req.query.days || 30))))));
@@ -258,6 +267,24 @@ api.delete('/team/members/:id', owner, (req, res) => {
   if (id(req) === req.session.user.id) throw httpError(400, "You can't remove yourself");
   removeMember(tenantId(), id(req));
   res.status(204).end();
+});
+
+// --- data export (owners can take their data with them) ---
+api.get('/export', owner, (req, res) => {
+  const t = tenantId();
+  const rows = (table) => all(`SELECT * FROM ${table} WHERE dealership_id = ?`, t);
+  const { stripe_customer_id, stripe_subscription_id, ...dealership } = getDealership();
+  res.set('Content-Disposition', `attachment; filename="dealer-social-export-${new Date().toISOString().slice(0, 10)}.json"`);
+  res.json({
+    exported_at: new Date().toISOString(),
+    dealership,
+    accounts: listAccounts(),
+    vehicles: rows('vehicles'),
+    posts: rows('posts'),
+    autopilot_rules: rows('autopilot_rules'),
+    inbox_messages: rows('inbox_messages'),
+    activity_log: rows('activity_log'),
+  });
 });
 
 // --- billing ---

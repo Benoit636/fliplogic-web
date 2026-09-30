@@ -9,12 +9,10 @@ try {
 } catch {}
 
 // ---------- utilities ----------
-const esc = (s) =>
-  String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const num = (n) => Number(n || 0).toLocaleString();
 const money = (n) => (n == null ? '—' : `$${Number(n).toLocaleString()}`);
-const fmtDate = (iso) =>
-  iso ? new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
+const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—');
 const ago = (iso) => {
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
   if (s < 60) return 'just now';
@@ -149,8 +147,10 @@ function bindPostActions(root, refresh) {
     }
     if (b.dataset.publish) {
       if (!confirm('Publish this post right now?')) return;
-      return act(b, () => api('POST', `/posts/${b.dataset.publish}/publish`), (p) =>
-        p.status === 'published' ? 'Published 🎉' : `Failed: ${p.error}`,
+      return act(
+        b,
+        () => api('POST', `/posts/${b.dataset.publish}/publish`),
+        (p) => (p.status === 'published' ? 'Published 🎉' : `Failed: ${p.error}`),
       ).then(refresh);
     }
   });
@@ -160,7 +160,9 @@ async function openPostEditor(id, onChange = () => {}) {
   const p = await api('GET', `/posts/${id}`);
   const rules = state.meta.platforms[p.platform];
   const locked = ['published', 'publishing'].includes(p.status);
-  const { el, close } = openModal(`${pIcon(p.platform)} ${platformLabel(p.platform)} post #${p.id}`, `
+  const { el, close } = openModal(
+    `${pIcon(p.platform)} ${platformLabel(p.platform)} post #${p.id}`,
+    `
     <div class="stack">
       <div class="row">${statusBadge(p.status)} <span class="muted small">${esc(typeLabel(p.post_type))}</span></div>
       <label class="field"><span>Post text</span><textarea id="pe-content" rows="9" ${locked ? 'disabled' : ''}>${esc(p.content)}</textarea></label>
@@ -173,11 +175,16 @@ async function openPostEditor(id, onChange = () => {}) {
       ${p.error ? `<div style="color:var(--bad)">${esc(p.error)}</div>` : ''}
     </div>
     <div class="modal-foot">
-      ${!locked ? `<button class="danger" id="pe-delete">Delete</button><span class="spacer"></span>
+      ${
+        !locked
+          ? `<button class="danger" id="pe-delete">Delete</button><span class="spacer"></span>
       <button id="pe-save">Save</button>
       <button id="pe-schedule" class="primary">Approve & schedule</button>
-      <button id="pe-publish" class="good">Publish now</button>` : `<button data-close>Close</button>`}
-    </div>`);
+      <button id="pe-publish" class="good">Publish now</button>`
+          : `<button data-close>Close</button>`
+      }
+    </div>`,
+  );
   const content = $('#pe-content', el);
   const tags = $('#pe-tags', el);
   const counter = () => {
@@ -204,38 +211,54 @@ async function openPostEditor(id, onChange = () => {}) {
   };
   $('#pe-save', el).onclick = (e) => act(e.target, () => api('PATCH', `/posts/${id}`, payload()), 'Saved').then((r) => r && done());
   $('#pe-schedule', el).onclick = (e) =>
-    act(e.target, async () => {
-      const body = payload();
-      await api('PATCH', `/posts/${id}`, body);
-      return api('POST', `/posts/${id}/schedule`, { scheduled_at: body.scheduled_at || new Date().toISOString() });
-    }, (r) => `Scheduled for ${fmtDate(r.scheduled_at)}`).then((r) => r && done());
+    act(
+      e.target,
+      async () => {
+        const body = payload();
+        await api('PATCH', `/posts/${id}`, body);
+        return api('POST', `/posts/${id}/schedule`, { scheduled_at: body.scheduled_at || new Date().toISOString() });
+      },
+      (r) => `Scheduled for ${fmtDate(r.scheduled_at)}`,
+    ).then((r) => r && done());
   $('#pe-publish', el).onclick = (e) =>
     confirm('Publish this post right now?') &&
-    act(e.target, async () => {
-      await api('PATCH', `/posts/${id}`, payload());
-      return api('POST', `/posts/${id}/publish`);
-    }, (r) => (r.status === 'published' ? 'Published 🎉' : `Failed: ${r.error}`)).then((r) => r && done());
-  $('#pe-delete', el).onclick = (e) =>
-    confirm('Delete this post?') && act(e.target, () => api('DELETE', `/posts/${id}`), 'Deleted').then(done);
+    act(
+      e.target,
+      async () => {
+        await api('PATCH', `/posts/${id}`, payload());
+        return api('POST', `/posts/${id}/publish`);
+      },
+      (r) => (r.status === 'published' ? 'Published 🎉' : `Failed: ${r.error}`),
+    ).then((r) => r && done());
+  $('#pe-delete', el).onclick = (e) => confirm('Delete this post?') && act(e.target, () => api('DELETE', `/posts/${id}`), 'Deleted').then(done);
   const rewrite = $('#pe-rewrite', el);
   if (rewrite)
     rewrite.onclick = (e) =>
-      act(e.target, async () => {
-        const r = await api('POST', `/posts/${id}/rewrite`, { instruction: $('#pe-ai', el).value || 'Make it more engaging' });
-        content.value = r.content;
-        tags.value = r.hashtags.join(' ');
-        counter();
-      }, 'Rewritten — review and save');
+      act(
+        e.target,
+        async () => {
+          const r = await api('POST', `/posts/${id}/rewrite`, { instruction: $('#pe-ai', el).value || 'Make it more engaging' });
+          content.value = r.content;
+          tags.value = r.hashtags.join(' ');
+          counter();
+        },
+        'Rewritten — review and save',
+      );
 }
 
 function platformChecks(name, selected = []) {
   return `<div class="checks">${Object.entries(state.meta.platforms)
-    .map(([k, p]) => `<label class="check"><input type="checkbox" name="${name}" value="${k}" ${selected.includes(k) ? 'checked' : ''}> ${pIcon(k)} ${esc(p.label)}</label>`)
+    .map(
+      ([k, p]) =>
+        `<label class="check"><input type="checkbox" name="${name}" value="${k}" ${selected.includes(k) ? 'checked' : ''}> ${pIcon(k)} ${esc(p.label)}</label>`,
+    )
     .join('')}</div>`;
 }
 const checkedValues = (root, name) => $$(`input[name="${name}"]:checked`, root).map((i) => i.value);
 const typeOptions = (selected) =>
-  Object.entries(state.meta.post_types).map(([k, v]) => `<option value="${k}" ${k === selected ? 'selected' : ''}>${esc(v)}</option>`).join('');
+  Object.entries(state.meta.post_types)
+    .map(([k, v]) => `<option value="${k}" ${k === selected ? 'selected' : ''}>${esc(v)}</option>`)
+    .join('');
 
 async function refreshBadges() {
   try {
@@ -261,9 +284,13 @@ views.dashboard = async () => {
   ];
   const done = steps.filter(([k]) => d.checklist[k]).length;
   view.innerHTML = `
-    ${done < steps.length ? `<div class="card checklist" style="margin-bottom:16px"><div class="card-head"><h2>🚀 Get set up</h2><span class="muted small">${done}/${steps.length} done</span></div>
+    ${
+      done < steps.length
+        ? `<div class="card checklist" style="margin-bottom:16px"><div class="card-head"><h2>🚀 Get set up</h2><span class="muted small">${done}/${steps.length} done</span></div>
       <div class="meter" style="margin-bottom:10px"><div style="width:${(done / steps.length) * 100}%"></div></div>
-      ${steps.map(([k, label, href]) => `<div class="list-item"><span>${d.checklist[k] ? '✅' : '⬜'}</span><a class="grow ${d.checklist[k] ? 'done' : ''}" href="${href}">${label}</a></div>`).join('')}</div>` : ''}
+      ${steps.map(([k, label, href]) => `<div class="list-item"><span>${d.checklist[k] ? '✅' : '⬜'}</span><a class="grow ${d.checklist[k] ? 'done' : ''}" href="${href}">${label}</a></div>`).join('')}</div>`
+        : ''
+    }
     <div class="kpis">
       <div class="kpi"><div class="label">Needs approval</div><div class="value">${d.post_counts.pending_approval}</div><div class="sub"><a href="#/approvals">Review →</a></div></div>
       <div class="kpi"><div class="label">Scheduled</div><div class="value">${d.post_counts.scheduled}</div><div class="sub"><a href="#/calendar">Calendar →</a></div></div>
@@ -279,7 +306,17 @@ views.dashboard = async () => {
         ${[...d.needs_approval, ...d.failed].length ? [...d.needs_approval, ...d.failed].map((p) => `<div class="list-item"><div>${pIcon(p.platform)}</div><div class="grow"><div class="clip">${esc(p.content.split('\n')[0])}</div><div class="small muted">${statusBadge(p.status)} ${esc(p.error || '')}</div></div><button class="small" data-edit="${p.id}">Open</button></div>`).join('') : '<div class="empty">All caught up ✨</div>'}
       </div>
       <div class="card"><div class="card-head"><h2>Bot activity</h2><div class="actions"><button class="small" id="dash-activity">See all</button></div></div>
-        ${d.activity.length ? d.activity.slice(0, 12).map((a) => `<div class="list-item"><span class="badge ${a.actor === 'bot' || a.actor === 'autopilot' ? 'info' : ''}">${esc(a.actor)}</span><div class="grow small"><strong>${esc(a.action)}</strong> ${esc(a.details)}</div><span class="small muted">${ago(a.at)}</span></div>`).join('') : '<div class="empty">No activity yet</div>'}
+        ${
+          d.activity.length
+            ? d.activity
+                .slice(0, 12)
+                .map(
+                  (a) =>
+                    `<div class="list-item"><span class="badge ${a.actor === 'bot' || a.actor === 'autopilot' ? 'info' : ''}">${esc(a.actor)}</span><div class="grow small"><strong>${esc(a.action)}</strong> ${esc(a.details)}</div><span class="small muted">${ago(a.at)}</span></div>`,
+                )
+                .join('')
+            : '<div class="empty">No activity yet</div>'
+        }
       </div>
       <div class="card"><div class="card-head"><h2>Connected accounts</h2><div class="actions"><a class="btn small" href="#/settings">Manage</a></div></div>
         ${d.accounts.length ? d.accounts.map((a) => `<div class="list-item"><div>${pIcon(a.platform)}</div><div class="grow">${esc(a.display_name)}<div class="small muted">${esc(platformLabel(a.platform))}</div></div><span class="badge ${a.mode === 'live' ? 'good' : ''}">${a.mode}</span>${a.enabled ? '' : '<span class="badge bad">off</span>'}</div>`).join('') : '<div class="empty">No accounts connected</div>'}
@@ -291,7 +328,11 @@ views.dashboard = async () => {
   };
   $('#dash-activity').onclick = async () => {
     const rows = await api('GET', '/activity');
-    openModal('Activity log', `<div class="table-wrap"><table><tr><th>When</th><th>Who</th><th>What</th><th>Details</th></tr>${rows.map((a) => `<tr><td class="small">${fmtDate(a.at)}</td><td>${esc(a.actor)}</td><td>${esc(a.action)}</td><td class="small">${esc(a.details)}</td></tr>`).join('')}</table></div>`, { wide: true });
+    openModal(
+      'Activity log',
+      `<div class="table-wrap"><table><tr><th>When</th><th>Who</th><th>What</th><th>Details</th></tr>${rows.map((a) => `<tr><td class="small">${fmtDate(a.at)}</td><td>${esc(a.actor)}</td><td>${esc(a.action)}</td><td class="small">${esc(a.details)}</td></tr>`).join('')}</table></div>`,
+      { wide: true },
+    );
   };
 };
 
@@ -321,7 +362,11 @@ views.assistant = async () => {
     log.scrollTop = log.scrollHeight;
     return el;
   };
-  if (!history.length) add('assistant', `Hi! I run ${state.dealership?.name || 'your dealership'}’s social media. Ask me to create posts, plan your calendar, handle comments and reviews, or explain what’s working.${state.meta.ai_enabled ? '' : '\n\n⚠️ Add a Claude API key (ANTHROPIC_API_KEY) to switch me on.'}`);
+  if (!history.length)
+    add(
+      'assistant',
+      `Hi! I run ${state.dealership?.name || 'your dealership'}’s social media. Ask me to create posts, plan your calendar, handle comments and reviews, or explain what’s working.${state.meta.ai_enabled ? '' : '\n\n⚠️ Add a Claude API key (ANTHROPIC_API_KEY) to switch me on.'}`,
+    );
   history.forEach((m) => add(m.role, m.text, m.tools || []));
 
   const send = async (text) => {
@@ -338,7 +383,11 @@ views.assistant = async () => {
         localStorage.setItem('ds.chatId', state.chatId);
       } catch {}
       typing.remove();
-      add('assistant', r.reply, r.actions.map((a) => a.tool));
+      add(
+        'assistant',
+        r.reply,
+        r.actions.map((a) => a.tool),
+      );
       refreshBadges();
     } catch (err) {
       typing.remove();
@@ -388,7 +437,9 @@ views.studio = async () => {
     if (!batch.length) return;
     batch = await Promise.all(batch.map((p) => api('GET', `/posts/${p.id}`).catch(() => null))).then((r) => r.filter(Boolean));
     $('#studio-out').innerHTML = batch.map((p) => postCard(p)).join('') || '<div class="empty">All posts removed</div>';
-    $('#studio-actions').innerHTML = batch.some((p) => ['draft', 'pending_approval'].includes(p.status)) ? `<button class="good small" id="studio-approve-all">Approve all</button>` : '';
+    $('#studio-actions').innerHTML = batch.some((p) => ['draft', 'pending_approval'].includes(p.status))
+      ? `<button class="good small" id="studio-approve-all">Approve all</button>`
+      : '';
     const all = $('#studio-approve-all');
     if (all) all.onclick = (e) => act(e.target, () => api('POST', '/posts/approve-batch', { ids: batch.map((p) => p.id) }), 'All approved').then(renderOut);
   };
@@ -418,7 +469,9 @@ views.approvals = async () => {
     <div class="post-grid" id="approval-list">${posts.map((p) => postCard(p)).join('') || '<div class="empty" style="grid-column:1/-1">Nothing waiting. 🎉</div>'}</div></div>`;
   bindPostActions($('#approval-list'), () => route());
   const all = $('#approve-all');
-  if (all) all.onclick = (e) => act(e.target, () => api('POST', '/posts/approve-batch', { ids: posts.map((p) => p.id) }), `${posts.length} posts approved`).then(() => route());
+  if (all)
+    all.onclick = (e) =>
+      act(e.target, () => api('POST', '/posts/approve-batch', { ids: posts.map((p) => p.id) }), `${posts.length} posts approved`).then(() => route());
 };
 
 views.calendar = async () => {
@@ -469,7 +522,9 @@ views.posts = async () => {
   const filters = ['', ...state.meta.post_statuses];
   view.innerHTML = `<div class="card">
     <div class="tabs">${filters.map((s) => `<button class="${s === status ? 'active' : ''}" data-status="${s}">${s ? STATUS_BADGE[s][0] : 'All'}</button>`).join('')}
-      <select id="pf" style="width:auto;margin-left:auto"><option value="">All platforms</option>${Object.entries(state.meta.platforms).map(([k, p]) => `<option value="${k}" ${k === platform ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}</select></div>
+      <select id="pf" style="width:auto;margin-left:auto"><option value="">All platforms</option>${Object.entries(state.meta.platforms)
+        .map(([k, p]) => `<option value="${k}" ${k === platform ? 'selected' : ''}>${esc(p.label)}</option>`)
+        .join('')}</select></div>
     <div class="table-wrap"><table><tr><th></th><th>Post</th><th>Type</th><th>Status</th><th>When</th><th class="num">Reach</th><th class="num">Likes</th><th></th></tr>
     ${posts.map((p) => `<tr><td>${pIcon(p.platform)}</td><td style="max-width:420px"><div class="clip">${esc(p.content.split('\n')[0])}</div><div class="small muted">#${p.id} · ${esc(p.source)}</div></td><td class="small">${esc(typeLabel(p.post_type))}</td><td>${statusBadge(p.status)}</td><td class="small">${fmtDate(p.published_at || p.scheduled_at || p.created_at)}</td><td class="num">${p.status === 'published' ? num(p.metrics.reach) : ''}</td><td class="num">${p.status === 'published' ? num(p.metrics.likes) : ''}</td><td><button class="small" data-edit="${p.id}">Open</button></td></tr>`).join('') || '<tr><td colspan="8"><div class="empty">No posts</div></td></tr>'}
     </table></div></div>`;
@@ -486,28 +541,65 @@ views.inbox = async () => {
   const params = new URLSearchParams(location.hash.split('?')[1] || '');
   const status = params.get('status') ?? 'new';
   const messages = await api('GET', `/inbox?${status === 'leads' ? 'lead=1' : status ? `status=${status}` : ''}`);
-  const tabs = [['new', 'New'], ['escalated', 'Escalated'], ['leads', '🔥 Leads'], ['replied', 'Replied'], ['dismissed', 'Dismissed'], ['', 'All']];
+  const tabs = [
+    ['new', 'New'],
+    ['escalated', 'Escalated'],
+    ['leads', '🔥 Leads'],
+    ['replied', 'Replied'],
+    ['dismissed', 'Dismissed'],
+    ['', 'All'],
+  ];
   const sentiment = { positive: 'good', negative: 'bad', neutral: '' };
   const priority = { urgent: 'bad', high: 'warn', normal: 'info', low: '' };
   view.innerHTML = `<div class="card">
     <div class="card-head"><div class="tabs" style="margin:0">${tabs.map(([k, l]) => `<button class="${k === status ? 'active' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>
       <div class="actions"><button class="small" id="inbox-sync">↻ Sync comments</button><button class="small" id="inbox-sim">+ Simulate messages</button></div></div>
-    <div id="inbox-list">${messages.map((m) => `<div class="list-item" data-msg="${m.id}">
+    <div id="inbox-list">${
+      messages
+        .map(
+          (m) => `<div class="list-item" data-msg="${m.id}">
       <div style="font-size:20px">${pIcon(m.platform)}</div>
       <div class="grow stack" style="gap:6px">
         <div class="row"><strong>${esc(m.author)}</strong><span class="small muted">${esc(m.kind)}${m.rating ? ` · ${'★'.repeat(m.rating)}` : ''} · ${ago(m.received_at)}</span>
           ${m.is_lead ? '<span class="badge warn">🔥 Lead</span>' : ''}${m.intent ? `<span class="badge">${esc(m.intent)}</span>` : ''}${m.sentiment ? `<span class="badge ${sentiment[m.sentiment]}">${esc(m.sentiment)}</span>` : ''}${m.priority ? `<span class="badge ${priority[m.priority]}">${esc(m.priority)}</span>` : ''}<span class="badge">${esc(m.status)}</span></div>
         <div>${esc(m.text)}</div>
-        ${m.reply ? `<div class="small" style="border-left:3px solid var(--good);padding-left:8px">↩ ${esc(m.reply)}</div>` : ['new', 'escalated'].includes(m.status) && m.intent !== 'spam' ? `<textarea rows="2" data-reply-text>${esc(m.suggested_reply || '')}</textarea>
-        <div class="row"><button class="small primary" data-reply="${m.id}">Send reply</button><button class="small" data-escalate="${m.id}">Escalate to a person</button><button class="small" data-dismiss="${m.id}">Dismiss</button></div>` : m.status === 'new' ? `<div class="row"><button class="small" data-dismiss="${m.id}">Dismiss spam</button></div>` : ''}
-      </div></div>`).join('') || '<div class="empty">Inbox zero 🎉</div>'}</div></div>`;
+        ${
+          m.reply
+            ? `<div class="small" style="border-left:3px solid var(--good);padding-left:8px">↩ ${esc(m.reply)}</div>`
+            : ['new', 'escalated'].includes(m.status) && m.intent !== 'spam'
+              ? `<textarea rows="2" data-reply-text>${esc(m.suggested_reply || '')}</textarea>
+        <div class="row"><button class="small primary" data-reply="${m.id}">Send reply</button><button class="small" data-escalate="${m.id}">Escalate &amp; send to CRM</button><button class="small" data-dismiss="${m.id}">Dismiss</button></div>`
+              : m.status === 'new'
+                ? `<div class="row"><button class="small" data-dismiss="${m.id}">Dismiss spam</button></div>`
+                : ''
+        }
+      </div></div>`,
+        )
+        .join('') || '<div class="empty">Inbox zero 🎉</div>'
+    }</div></div>`;
   $$('[data-tab]').forEach((b) => (b.onclick = () => (location.hash = `#/inbox?status=${b.dataset.tab}`)));
-  $('#inbox-sim').onclick = (e) => act(e.target, () => api('POST', '/inbox/simulate', { count: 3 }), (r) => `${r.length} messages received and triaged`).then(() => { route(); refreshBadges(); });
-  $('#inbox-sync').onclick = (e) => act(e.target, () => api('POST', '/inbox/sync'), (r) => `${r.added} new comments`).then(() => route());
+  $('#inbox-sim').onclick = (e) =>
+    act(
+      e.target,
+      () => api('POST', '/inbox/simulate', { count: 3 }),
+      (r) => `${r.length} messages received and triaged`,
+    ).then(() => {
+      route();
+      refreshBadges();
+    });
+  $('#inbox-sync').onclick = (e) =>
+    act(
+      e.target,
+      () => api('POST', '/inbox/sync'),
+      (r) => `${r.added} new comments`,
+    ).then(() => route());
   $('#inbox-list').onclick = (e) => {
     const b = e.target.closest('button');
     if (!b) return;
-    const done = () => { route(); refreshBadges(); };
+    const done = () => {
+      route();
+      refreshBadges();
+    };
     if (b.dataset.reply) {
       const text = $('[data-reply-text]', b.closest('[data-msg]')).value;
       act(b, () => api('POST', `/inbox/${b.dataset.reply}/reply`, { text }), 'Reply sent').then(done);
@@ -519,8 +611,21 @@ views.inbox = async () => {
 
 function vehicleForm(v = {}) {
   return `<form class="form-grid" id="vehicle-form">
-    ${[['year', 'Year', 'number'], ['make', 'Make'], ['model', 'Model'], ['trim', 'Trim'], ['price', 'Price', 'number'], ['mileage', `Odometer (${state.dealership?.distance_unit || 'km'})`, 'number'], ['exterior_color', 'Color'], ['stock_number', 'Stock #'], ['vin', 'VIN']]
-      .map(([k, l, t = 'text']) => `<label class="field"><span>${l}</span><input name="${k}" type="${t}" value="${esc(v[k] ?? '')}" ${['make', 'model'].includes(k) ? 'required' : ''}></label>`)
+    ${[
+      ['year', 'Year', 'number'],
+      ['make', 'Make'],
+      ['model', 'Model'],
+      ['trim', 'Trim'],
+      ['price', 'Price', 'number'],
+      ['mileage', `Odometer (${state.dealership?.distance_unit || 'km'})`, 'number'],
+      ['exterior_color', 'Color'],
+      ['stock_number', 'Stock #'],
+      ['vin', 'VIN'],
+    ]
+      .map(
+        ([k, l, t = 'text']) =>
+          `<label class="field"><span>${l}</span><input name="${k}" type="${t}" value="${esc(v[k] ?? '')}" ${['make', 'model'].includes(k) ? 'required' : ''}></label>`,
+      )
       .join('')}
     <label class="field"><span>Condition</span><select name="condition">${['new', 'used', 'certified'].map((c) => `<option ${v.condition === c ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
     <label class="field"><span>Status</span><select name="status">${['available', 'pending', 'sold'].map((c) => `<option ${v.status === c ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
@@ -554,12 +659,19 @@ views.inventory = async () => {
     <div class="card-head"><form id="inv-search" style="flex:1;max-width:340px"><input name="q" placeholder="Search make, model, stock #…" value="${esc(q)}"></form>
       <div class="actions">${state.dealership?.inventory_feed_url ? '<button class="small" id="inv-sync">↻ Sync feed now</button>' : ''}<label class="btn small">⬆ Import CSV<input type="file" id="inv-csv" accept=".csv,text/csv" hidden></label><button class="small primary" id="inv-add">+ Add vehicle</button></div></div>
     <div class="table-wrap"><table><tr><th></th><th>Vehicle</th><th>Condition</th><th class="num">Price</th><th class="num">${unit}</th><th>Status</th><th>Last posted</th><th></th></tr>
-    ${vehicles.map((v) => `<tr><td>${v.photos[0] ? `<img src="${esc(v.photos[0])}" alt="" style="width:56px;height:42px;object-fit:cover;border-radius:6px">` : ''}</td>
+    ${
+      vehicles
+        .map(
+          (v) => `<tr><td>${v.photos[0] ? `<img src="${esc(v.photos[0])}" alt="" style="width:56px;height:42px;object-fit:cover;border-radius:6px">` : ''}</td>
       <td><strong>${esc([v.year, v.make, v.model].join(' '))}</strong> ${esc(v.trim)}<div class="small muted">${esc(v.exterior_color)} ${v.stock_number ? `· #${esc(v.stock_number)}` : ''}</div></td>
       <td>${esc(v.condition)}</td><td class="num">${money(v.price)}${v.previous_price > v.price ? `<div class="small" style="color:var(--good)">↓ from ${money(v.previous_price)}</div>` : ''}</td><td class="num">${num(v.mileage)}</td>
       <td><span class="badge ${v.status === 'available' ? 'good' : v.status === 'sold' ? 'info' : 'warn'}">${v.status}</span></td>
       <td class="small">${v.last_posted_at ? ago(v.last_posted_at) : '<span class="badge warn">never</span>'}</td>
-      <td class="row" style="flex-wrap:nowrap"><a class="btn small" href="#/studio?vehicle=${v.id}&type=${v.status === 'sold' ? 'sold_celebration' : v.last_posted_at ? 'vehicle_spotlight' : 'new_arrival'}">✨ Post</a><button class="small" data-vedit="${v.id}">Edit</button><button class="small danger" data-vdel="${v.id}">✕</button></td></tr>`).join('') || '<tr><td colspan="8"><div class="empty">No vehicles yet. Add one or import a CSV export from your DMS (columns like Stock, VIN, Year, Make, Model, Trim, Price, Mileage, Color, Features, Photos).</div></td></tr>'}
+      <td><div class="row" style="flex-wrap:nowrap"><a class="btn small" href="#/studio?vehicle=${v.id}&type=${v.status === 'sold' ? 'sold_celebration' : v.last_posted_at ? 'vehicle_spotlight' : 'new_arrival'}">✨ Post</a><button class="small" data-vedit="${v.id}">Edit</button><button class="small danger" data-vdel="${v.id}">✕</button></div></td></tr>`,
+        )
+        .join('') ||
+      '<tr><td colspan="8"><div class="empty">No vehicles yet. Add one or import a CSV export from your DMS (columns like Stock, VIN, Year, Make, Model, Trim, Price, Mileage, Color, Features, Photos).</div></td></tr>'
+    }
     </table></div></div>`;
   $('#inv-search').onsubmit = (e) => {
     e.preventDefault();
@@ -567,7 +679,13 @@ views.inventory = async () => {
   };
   $('#inv-add').onclick = () => openVehicleEditor(null, route);
   const sync = $('#inv-sync');
-  if (sync) sync.onclick = () => act(sync, () => api('POST', '/vehicles/sync-feed'), (r) => `Feed synced: ${r.summary}`).then(route);
+  if (sync)
+    sync.onclick = () =>
+      act(
+        sync,
+        () => api('POST', '/vehicles/sync-feed'),
+        (r) => `Feed synced: ${r.summary}`,
+      ).then(route);
   $('#inv-csv').onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -578,7 +696,11 @@ views.inventory = async () => {
   view.onclick = async (e) => {
     const b = e.target.closest('button');
     if (!b) return;
-    if (b.dataset.vedit) openVehicleEditor(vehicles.find((v) => v.id === Number(b.dataset.vedit)), route);
+    if (b.dataset.vedit)
+      openVehicleEditor(
+        vehicles.find((v) => v.id === Number(b.dataset.vedit)),
+        route,
+      );
     if (b.dataset.vdel && confirm('Delete this vehicle?')) act(b, () => api('DELETE', `/vehicles/${b.dataset.vdel}`), 'Deleted').then(route);
   };
 };
@@ -630,19 +752,38 @@ views.autopilot = async () => {
       </div></div>
     <div class="card"><div class="card-head"><h2>Recurring rules</h2><span class="muted small">The bot creates these posts automatically, picking the right vehicle each time.</span><div class="actions"><button class="primary small" id="rule-add">+ New rule</button></div></div>
       <div class="table-wrap"><table><tr><th>On</th><th>Rule</th><th>Where</th><th>When</th><th>Next run</th><th></th></tr>
-      ${rules.map((r) => `<tr><td><input type="checkbox" data-toggle="${r.id}" ${r.enabled ? 'checked' : ''}></td><td><strong>${esc(r.name)}</strong><div class="small muted">${esc(typeLabel(r.post_type))}</div></td><td>${r.platforms.map(pIcon).join(' ')}</td><td class="small">${r.days_of_week.map((d) => days[d]).join(', ')} at ${esc(r.time_of_day)}</td><td class="small">${r.enabled ? fmtDate(r.next_run_at) : '—'}${r.last_run_at ? `<div class="muted">last ${ago(r.last_run_at)}</div>` : ''}</td>
-        <td class="row" style="flex-wrap:nowrap"><button class="small" data-run="${r.id}">Run now</button><button class="small" data-redit="${r.id}">Edit</button><button class="small danger" data-rdel="${r.id}">✕</button></td></tr>`).join('') || '<tr><td colspan="6"><div class="empty">No rules yet</div></td></tr>'}
+      ${
+        rules
+          .map(
+            (
+              r,
+            ) => `<tr><td><input type="checkbox" data-toggle="${r.id}" ${r.enabled ? 'checked' : ''}></td><td><strong>${esc(r.name)}</strong><div class="small muted">${esc(typeLabel(r.post_type))}</div></td><td>${r.platforms.map(pIcon).join(' ')}</td><td class="small">${r.days_of_week.map((d) => days[d]).join(', ')} at ${esc(r.time_of_day)}</td><td class="small">${r.enabled ? fmtDate(r.next_run_at) : '—'}${r.last_run_at ? `<div class="muted">last ${ago(r.last_run_at)}</div>` : ''}</td>
+        <td><div class="row" style="flex-wrap:nowrap"><button class="small" data-run="${r.id}">Run now</button><button class="small" data-redit="${r.id}">Edit</button><button class="small danger" data-rdel="${r.id}">✕</button></div></td></tr>`,
+          )
+          .join('') || '<tr><td colspan="6"><div class="empty">No rules yet</div></td></tr>'
+      }
       </table></div></div></div>`;
-  $$('input[name="autonomy"]').forEach((i) =>
-    (i.onchange = () => act(null, () => api('PUT', '/dealership', { autonomy: i.value }), `Mode: ${i.value}`).then(loadShell)),
+  $$('input[name="autonomy"]').forEach(
+    (i) => (i.onchange = () => act(null, () => api('PUT', '/dealership', { autonomy: i.value }), `Mode: ${i.value}`).then(loadShell)),
   );
   $('#rule-add').onclick = () => openRuleEditor(null, route);
   view.onclick = (e) => {
     const b = e.target.closest('button');
-    if (b?.dataset.redit) openRuleEditor(rules.find((r) => r.id === Number(b.dataset.redit)), route);
+    if (b?.dataset.redit)
+      openRuleEditor(
+        rules.find((r) => r.id === Number(b.dataset.redit)),
+        route,
+      );
     if (b?.dataset.rdel && confirm('Delete this rule?')) act(b, () => api('DELETE', `/autopilot/rules/${b.dataset.rdel}`)).then(route);
     if (b?.dataset.run)
-      act(b, () => api('POST', `/autopilot/rules/${b.dataset.run}/run`), (r) => (r.skipped ? r.reason : `${r.posts.length} posts created`)).then(() => { route(); refreshBadges(); });
+      act(
+        b,
+        () => api('POST', `/autopilot/rules/${b.dataset.run}/run`),
+        (r) => (r.skipped ? r.reason : `${r.posts.length} posts created`),
+      ).then(() => {
+        route();
+        refreshBadges();
+      });
   };
   view.onchange = (e) => {
     const t = e.target.dataset?.toggle;
@@ -659,7 +800,16 @@ views.analytics = async () => {
   view.innerHTML = `<div class="stack">
     <div class="row"><div class="tabs" style="margin:0">${[7, 30, 90].map((d) => `<button class="${d === days ? 'active' : ''}" data-days="${d}">Last ${d} days</button>`).join('')}</div><span class="spacer"></span><button class="small" id="an-refresh">↻ Refresh numbers</button></div>
     <div class="kpis" style="margin:0">
-      ${[['Posts', t.posts], ['Reach', t.reach], ['Engagements', t.engagements], ['Engagement rate', `${t.engagement_rate}%`], ['Link clicks', t.clicks], ['Leads', t.leads]].map(([l, v]) => `<div class="kpi"><div class="label">${l}</div><div class="value">${typeof v === 'number' ? num(v) : v}</div></div>`).join('')}
+      ${[
+        ['Posts', t.posts],
+        ['Reach', t.reach],
+        ['Engagements', t.engagements],
+        ['Engagement rate', `${t.engagement_rate}%`],
+        ['Link clicks', t.clicks],
+        ['Leads', t.leads],
+      ]
+        .map(([l, v]) => `<div class="kpi"><div class="label">${l}</div><div class="value">${typeof v === 'number' ? num(v) : v}</div></div>`)
+        .join('')}
     </div>
     <div class="card"><div class="card-head"><h2>Daily reach</h2></div>
       <div class="bars">${a.series.map((s) => `<div class="bar" style="height:${(s.reach / max) * 100}%" title="${s.day}: ${num(s.reach)} reach, ${s.posts} posts"></div>`).join('')}</div>
@@ -674,10 +824,31 @@ views.analytics = async () => {
       ${a.top_posts.map((p) => `<div class="list-item"><div>${pIcon(p.platform)}</div><div class="grow"><div class="clip">${esc(p.content)}</div><div class="small muted">${esc(typeLabel(p.post_type))} · 👁 ${num(p.metrics.reach)} · ❤️ ${num(p.metrics.likes)} · 💬 ${num(p.metrics.comments)} · 🔁 ${num(p.metrics.shares)}</div></div>${p.external_url ? `<a class="btn small" target="_blank" rel="noopener" href="${esc(p.external_url)}">View ↗</a>` : ''}</div>`).join('') || '<div class="empty">Publish a few posts to see what works best.</div>'}</div>
   </div>`;
   $$('[data-days]').forEach((b) => (b.onclick = () => (location.hash = `#/analytics?days=${b.dataset.days}`)));
-  $('#an-refresh').onclick = (e) => act(e.target, () => api('POST', '/analytics/refresh'), (r) => `${r.updated} posts updated`).then(route);
+  $('#an-refresh').onclick = (e) =>
+    act(
+      e.target,
+      () => api('POST', '/analytics/refresh'),
+      (r) => `${r.updated} posts updated`,
+    ).then(route);
 };
 
-const COMMON_TZ = ['America/Moncton', 'America/Halifax', 'America/St_Johns', 'America/Toronto', 'America/New_York', 'America/Chicago', 'America/Winnipeg', 'America/Regina', 'America/Denver', 'America/Edmonton', 'America/Phoenix', 'America/Los_Angeles', 'America/Vancouver', 'America/Anchorage', 'Pacific/Honolulu'];
+const COMMON_TZ = [
+  'America/Moncton',
+  'America/Halifax',
+  'America/St_Johns',
+  'America/Toronto',
+  'America/New_York',
+  'America/Chicago',
+  'America/Winnipeg',
+  'America/Regina',
+  'America/Denver',
+  'America/Edmonton',
+  'America/Phoenix',
+  'America/Los_Angeles',
+  'America/Vancouver',
+  'America/Anchorage',
+  'Pacific/Honolulu',
+];
 function timezones(selected) {
   const list = COMMON_TZ.includes(selected) ? COMMON_TZ : [selected, ...COMMON_TZ];
   return list.map((z) => `<option ${z === selected ? 'selected' : ''}>${esc(z)}</option>`).join('');
@@ -690,16 +861,25 @@ async function openConnectPicker(stateToken) {
   } catch (err) {
     return toast(err.message, 'error');
   }
-  const { el, close } = openModal('Choose what to connect', options.length
-    ? `<div class="stack">${options.map((o) => `<label class="check" style="border-radius:8px"><input type="checkbox" value="${o.index}" ${o.already_connected ? '' : 'checked'}> ${pIcon(o.platform)} ${esc(o.display_name)} <span class="small muted">${esc(platformLabel(o.platform))}${o.already_connected ? ' · already connected (refresh token)' : ''}</span></label>`).join('')}
+  const { el, close } = openModal(
+    'Choose what to connect',
+    options.length
+      ? `<div class="stack">${options.map((o) => `<label class="check" style="border-radius:8px"><input type="checkbox" value="${o.index}" ${o.already_connected ? '' : 'checked'}> ${pIcon(o.platform)} ${esc(o.display_name)} <span class="small muted">${esc(platformLabel(o.platform))}${o.already_connected ? ' · already connected (refresh token)' : ''}</span></label>`).join('')}
       <div class="row"><span class="spacer"></span><button class="primary" id="connect-go">Connect selected</button></div></div>`
-    : '<div class="empty">No pages or profiles were found on that login. Make sure you are an admin of the page/location and granted all permissions.</div>');
+      : '<div class="empty">No pages or profiles were found on that login. Make sure you are an admin of the page/location and granted all permissions.</div>',
+  );
   const go = $('#connect-go', el);
-  if (go) go.onclick = () => act(go, () => api('POST', `/oauth/pending/${encodeURIComponent(stateToken)}/connect`, { indexes: $$('input:checked', el).map((i) => Number(i.value)) }), (r) => `${r.connected} account(s) connected`).then((r) => {
-    if (!r) return;
-    close();
-    location.hash = '#/settings';
-  });
+  if (go)
+    go.onclick = () =>
+      act(
+        go,
+        () => api('POST', `/oauth/pending/${encodeURIComponent(stateToken)}/connect`, { indexes: $$('input:checked', el).map((i) => Number(i.value)) }),
+        (r) => `${r.connected} account(s) connected`,
+      ).then((r) => {
+        if (!r) return;
+        close();
+        location.hash = '#/settings';
+      });
 }
 
 views.settings = async () => {
@@ -722,11 +902,17 @@ views.settings = async () => {
         <label class="field"><span>Time zone (autopilot schedules use it)</span><select name="timezone">${timezones(d.timezone)}</select></label>
         <label class="field full"><span>Inventory feed URL (CSV from your DMS or website provider — synced every 6 hours, Pro plan)</span><input name="inventory_feed_url" value="${esc(d.inventory_feed_url)}" placeholder="https://…/inventory.csv"></label>
         <label class="check full" style="border-radius:8px"><input type="checkbox" name="feed_marks_sold" value="1" ${d.feed_marks_sold ? 'checked' : ''}> Mark vehicles as sold when they disappear from the feed (creates “sold” celebration posts)</label>
+        <label class="field full"><span>CRM lead email (leads from comments, DMs and reviews are forwarded in ADF/XML — the format your CRM already accepts)</span><input name="crm_lead_email" type="email" value="${esc(d.crm_lead_email || '')}" placeholder="leads@yourstore.crm-provider.com"></label>
         ${d.feed_last_synced_at ? `<div class="full small muted">Last feed sync ${ago(d.feed_last_synced_at)}: ${esc(d.feed_last_result)}</div>` : ''}
         <div class="full row"><span class="spacer"></span><button class="primary">Save profile</button></div>
       </div></form>
     <div class="card"><div class="card-head"><h2>Social accounts</h2><div class="actions"><button class="small" id="acct-add">+ Add manually</button></div></div>
-      <div class="row" style="margin-bottom:10px">${Object.entries(state.meta.oauth).map(([k, o]) => `<button class="${o.configured ? 'primary' : ''} small" data-oauth="${k}" ${o.configured ? '' : 'disabled title="Not configured on this server yet"'}>🔗 Connect ${esc(o.label)}</button>`).join('')}</div>
+      <div class="row" style="margin-bottom:10px">${Object.entries(state.meta.oauth)
+        .map(
+          ([k, o]) =>
+            `<button class="${o.configured ? 'primary' : ''} small" data-oauth="${k}" ${o.configured ? '' : 'disabled title="Not configured on this server yet"'}>🔗 Connect ${esc(o.label)}</button>`,
+        )
+        .join('')}</div>
       <p class="small muted">Use the Connect buttons to link your real pages in one click. <strong>Simulated</strong> accounts let you try the full workflow without posting anything.</p>
       <div class="table-wrap"><table><tr><th>Platform</th><th>Name</th><th>Mode</th><th>Token</th><th>On</th><th></th></tr>
       ${accounts.map((a) => `<tr><td>${pIcon(a.platform)} ${esc(platformLabel(a.platform))}</td><td>${esc(a.display_name)}${a.last_error ? `<div class="small" style="color:var(--bad)">⚠️ ${esc(a.last_error)}</div>` : ''}</td><td><span class="badge ${a.mode === 'live' ? 'good' : ''}">${a.mode}</span></td><td class="small muted">${esc(a.token_hint || '—')}</td><td><input type="checkbox" data-aon="${a.id}" ${a.enabled ? 'checked' : ''}></td><td><button class="small" data-aedit="${a.id}">Edit</button> <button class="small danger" data-adel="${a.id}">✕</button></td></tr>`).join('') || '<tr><td colspan="6"><div class="empty">No accounts yet</div></td></tr>'}
@@ -734,7 +920,8 @@ views.settings = async () => {
     <form class="card" id="pw-form"><div class="card-head"><h2>Your password</h2></div><div class="form-grid">
       <label class="field"><span>Current password</span><input type="password" name="current_password" required autocomplete="current-password"></label>
       <label class="field"><span>New password</span><input type="password" name="new_password" required minlength="8" autocomplete="new-password"></label>
-      <div class="full row"><span class="spacer"></span><button>Change password</button></div></div></form></div>`;
+      <div class="full row"><span class="spacer"></span><button>Change password</button></div></div></form>
+    ${state.me?.role === 'owner' ? `<div class="card"><div class="card-head"><h2>Your data</h2><div class="actions"><a class="btn small" href="/api/export" download>⬇ Export everything (JSON)</a></div></div><p class="small muted">Download your inventory, posts, inbox and settings at any time. To delete your dealership, email ${esc(state.meta.support_email)} from an owner address.</p></div>` : ''}</div>`;
   $('#dealer-form').onsubmit = (e) => {
     e.preventDefault();
     const body = Object.fromEntries(new FormData(e.target));
@@ -743,22 +930,36 @@ views.settings = async () => {
   };
   $('#pw-form').onsubmit = (e) => {
     e.preventDefault();
-    act(e.submitter, () => fetch('/api/me/password', { method: 'POST', headers: { 'content-type': 'application/json', 'x-requested-with': 'fetch' }, body: JSON.stringify(Object.fromEntries(new FormData(e.target))) }).then(async (r) => {
-      if (!r.ok) throw new Error((await r.json()).error);
-      e.target.reset();
-    }), 'Password changed');
+    act(
+      e.submitter,
+      () =>
+        fetch('/api/me/password', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-requested-with': 'fetch' },
+          body: JSON.stringify(Object.fromEntries(new FormData(e.target))),
+        }).then(async (r) => {
+          if (!r.ok) throw new Error((await r.json()).error);
+          e.target.reset();
+        }),
+      'Password changed',
+    );
   };
   const params = new URLSearchParams(location.hash.split('?')[1] || '');
   if (params.get('connect_error')) toast(`Connection failed: ${params.get('connect_error')}`, 'error');
   if (params.get('connect')) openConnectPicker(params.get('connect'));
   const accountEditor = (a) => {
-    const { el, close } = openModal(a ? 'Edit account' : 'Connect account', `<form class="stack" id="acct-form">
-      <label class="field"><span>Platform</span><select name="platform" ${a ? 'disabled' : ''}>${Object.entries(state.meta.platforms).map(([k, p]) => `<option value="${k}" ${a?.platform === k ? 'selected' : ''}>${esc(p.label)}${p.live_supported ? '' : ' (simulated only)'}</option>`).join('')}</select></label>
+    const { el, close } = openModal(
+      a ? 'Edit account' : 'Connect account',
+      `<form class="stack" id="acct-form">
+      <label class="field"><span>Platform</span><select name="platform" ${a ? 'disabled' : ''}>${Object.entries(state.meta.platforms)
+        .map(([k, p]) => `<option value="${k}" ${a?.platform === k ? 'selected' : ''}>${esc(p.label)}${p.live_supported ? '' : ' (simulated only)'}</option>`)
+        .join('')}</select></label>
       <label class="field"><span>Display name</span><input name="display_name" required value="${esc(a?.display_name || '')}" placeholder="Riverside Motors"></label>
       <label class="field"><span>Mode</span><select name="mode"><option value="simulated">Simulated (safe demo)</option><option value="live" ${a?.mode === 'live' ? 'selected' : ''}>Live</option></select></label>
       <label class="field"><span>Page ID / account ID (live)</span><input name="external_id" value="${esc(a?.external_id || '')}"></label>
       <label class="field"><span>Access token (live)${a?.has_token ? ' — leave blank to keep current' : ''}</span><input name="access_token" type="password" autocomplete="off"></label>
-      <div class="row"><span class="spacer"></span><button class="primary">Save</button></div></form>`);
+      <div class="row"><span class="spacer"></span><button class="primary">Save</button></div></form>`,
+    );
     $('#acct-form', el).onsubmit = (e) => {
       e.preventDefault();
       const body = Object.fromEntries(new FormData(e.target));
@@ -795,10 +996,14 @@ views.team = async () => {
       <div class="table-wrap"><table><tr><th>Name</th><th>Email</th><th>Role</th><th>Last login</th><th></th></tr>
       ${team.members.map((m) => `<tr><td>${esc(m.name || '—')}</td><td>${esc(m.email)}</td><td>${roleSelect(m)}</td><td class="small">${m.last_login_at ? ago(m.last_login_at) : 'never'}</td><td>${isOwner && m.id !== state.me.user.id ? `<button class="small danger" data-remove="${m.id}">Remove</button>` : ''}</td></tr>`).join('')}
       </table></div></div>
-    ${isOwner ? `<form class="card" id="invite-form"><div class="card-head"><h2>Invite someone</h2></div><div class="row">
+    ${
+      isOwner
+        ? `<form class="card" id="invite-form"><div class="card-head"><h2>Invite someone</h2></div><div class="row">
       <input type="email" name="email" placeholder="name@dealership.com" required style="flex:1;min-width:200px">
       <select name="role" style="width:auto"><option value="staff">Staff</option><option value="manager">Manager</option><option value="owner">Owner</option></select>
-      <button class="primary">Send invite</button></div><div id="invite-link" class="small" style="margin-top:8px"></div></form>` : ''}
+      <button class="primary">Send invite</button></div><div id="invite-link" class="small" style="margin-top:8px"></div></form>`
+        : ''
+    }
     ${team.invites.length ? `<div class="card"><div class="card-head"><h2>Pending invites</h2></div>${team.invites.map((i) => `<div class="list-item"><div class="grow">${esc(i.email)} <span class="badge">${esc(i.role)}</span><div class="small muted">expires ${fmtDate(i.expires_at)}</div></div>${isOwner ? `<button class="small" data-revoke="${i.id}">Revoke</button>` : ''}</div>`).join('')}</div>` : ''}
   </div>`;
   const inviteForm = $('#invite-form');
@@ -813,7 +1018,8 @@ views.team = async () => {
     };
   view.onclick = (e) => {
     const b = e.target.closest('button');
-    if (b?.dataset.remove && confirm('Remove this person from the dealership?')) act(b, () => api('DELETE', `/team/members/${b.dataset.remove}`), 'Removed').then(route);
+    if (b?.dataset.remove && confirm('Remove this person from the dealership?'))
+      act(b, () => api('DELETE', `/team/members/${b.dataset.remove}`), 'Removed').then(route);
     if (b?.dataset.revoke) act(b, () => api('DELETE', `/team/invites/${b.dataset.revoke}`), 'Invite revoked').then(route);
   };
   view.onchange = (e) => {
@@ -828,14 +1034,15 @@ views.billing = async () => {
   if (params.get('checkout') === 'success') toast('Thanks! Your subscription is active 🎉');
   let interval = params.get('interval') === 'year' ? 'year' : b.billing_interval || 'month';
   const isOwner = state.me?.role === 'owner';
-  const statusText = {
-    trialing: `Free trial — ends ${b.trial_ends_at ? new Date(b.trial_ends_at).toLocaleDateString() : 'soon'}`,
-    active: `Active — renews ${b.current_period_end ? new Date(b.current_period_end).toLocaleDateString() : ''}`,
-    past_due: 'Payment failed — please update your card',
-    canceled: 'Canceled',
-    unpaid: 'Unpaid',
-    comped: 'Complimentary plan',
-  }[b.subscription_status] || b.subscription_status;
+  const statusText =
+    {
+      trialing: `Free trial — ends ${b.trial_ends_at ? new Date(b.trial_ends_at).toLocaleDateString() : 'soon'}`,
+      active: `Active — renews ${b.current_period_end ? new Date(b.current_period_end).toLocaleDateString() : ''}`,
+      past_due: 'Payment failed — please update your card',
+      canceled: 'Canceled',
+      unpaid: 'Unpaid',
+      comped: 'Complimentary plan',
+    }[b.subscription_status] || b.subscription_status;
   const meter = (label, used, limit) => {
     const pct = limit ? Math.min(100, (used / limit) * 100) : 100;
     return `<div class="stack" style="gap:4px"><div class="row small"><span>${label}</span><span class="spacer"></span><span class="muted">${num(used)} / ${limit ? num(limit) : '—'}</span></div><div class="meter ${pct >= 100 ? 'full' : ''}"><div style="width:${pct}%"></div></div></div>`;
@@ -853,16 +1060,18 @@ views.billing = async () => {
           ${meter('Autopilot rules', b.usage.autopilotRules, b.limits.autopilotRules)}
         </div></div>
       <div class="row" style="justify-content:center"><div class="tabs" style="margin:0"><button data-int="month" class="${interval === 'month' ? 'active' : ''}">Monthly</button><button data-int="year" class="${interval === 'year' ? 'active' : ''}">Yearly — 2 months free</button></div></div>
-      <div class="l-pricing">${Object.entries(b.plans).map(([key, p]) => {
-        const current = key === b.plan && ['active', 'past_due', 'comped'].includes(b.subscription_status);
-        const price = interval === 'year' ? Math.round(p.yearly / 12) : p.monthly;
-        return `<div class="card l-plan ${p.popular ? 'popular' : ''}">
+      <div class="l-pricing">${Object.entries(b.plans)
+        .map(([key, p]) => {
+          const current = key === b.plan && ['active', 'past_due', 'comped'].includes(b.subscription_status);
+          const price = interval === 'year' ? Math.round(p.yearly / 12) : p.monthly;
+          return `<div class="card l-plan ${p.popular ? 'popular' : ''}">
           ${p.popular ? '<span class="badge info">Most popular</span>' : ''}<h3>${esc(p.name)}</h3><p class="small muted">${esc(p.tagline)}</p>
           <div class="l-price">$${price}<span>/mo</span></div><div class="small muted">${interval === 'year' ? `billed $${p.yearly.toLocaleString()} yearly` : 'billed monthly'} · USD</div>
           <ul>${p.highlights.map((h) => `<li>${esc(h)}</li>`).join('')}</ul>
           ${current ? '<button disabled>Current plan</button>' : isOwner ? `<button class="${p.popular ? 'primary' : ''}" data-plan="${key}">${b.subscription_status === 'active' ? 'Switch' : 'Choose'} ${esc(p.name)}</button>` : '<span class="small muted">Ask the owner to change plans</span>'}
         </div>`;
-      }).join('')}</div>
+        })
+        .join('')}</div>
       ${b.billing_enabled ? '' : `<p class="small muted" style="text-align:center">Online payment isn’t switched on for this server yet — contact <a href="mailto:${esc(state.meta.support_email)}">${esc(state.meta.support_email)}</a> to activate a plan.</p>`}
     </div>`;
   };
@@ -902,7 +1111,8 @@ function renderBanner() {
   const e = d.entitlements;
   let html = '';
   if (!e.active) html = `<div class="banner bad">⛔ ${esc(e.reason)} <a class="btn small" href="#/billing">Choose a plan</a></div>`;
-  else if (d.subscription_status === 'past_due') html = `<div class="banner bad">⚠️ ${esc(e.reason)} <a class="btn small" href="#/billing">Update card</a></div>`;
+  else if (d.subscription_status === 'past_due')
+    html = `<div class="banner bad">⚠️ ${esc(e.reason)} <a class="btn small" href="#/billing">Update card</a></div>`;
   else if (d.subscription_status === 'trialing' && d.trial_ends_at) {
     const days = Math.max(0, Math.ceil((new Date(d.trial_ends_at) - Date.now()) / 86_400_000));
     html = `<div class="banner info">🎁 Free trial of ${esc(e.planName)}: ${days} day${days === 1 ? '' : 's'} left. <a class="btn small" href="#/billing">Choose a plan</a></div>`;
@@ -918,19 +1128,34 @@ function renderUserBox() {
     <div class="clip">${esc(me.user.name || me.user.email)} · <span class="muted">${esc(me.role || '')}</span></div>
     <div class="row" style="gap:6px"><button class="small" id="add-rooftop">+ Rooftop</button>${me.user.is_superadmin ? '<a class="btn small" href="/admin">Admin</a>' : ''}<button class="small" id="logout">Log out</button></div>`;
   const sw = $('#dealer-switch');
-  if (sw) sw.onchange = () => fetch('/api/me/switch', { method: 'POST', headers: { 'content-type': 'application/json', 'x-requested-with': 'fetch' }, body: JSON.stringify({ dealership_id: Number(sw.value) }) }).then(() => (location.hash = '#/dashboard', location.reload()));
+  if (sw)
+    sw.onchange = () =>
+      fetch('/api/me/switch', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-requested-with': 'fetch' },
+        body: JSON.stringify({ dealership_id: Number(sw.value) }),
+      }).then(() => ((location.hash = '#/dashboard'), location.reload()));
   $('#logout').onclick = () => fetch('/api/auth/logout', { method: 'POST', headers: { 'x-requested-with': 'fetch' } }).then(() => (location.href = '/login'));
   $('#add-rooftop').onclick = () => {
-    const { el, close } = openModal('Add another dealership (rooftop)', `<form class="stack" id="rooftop-form"><p class="small muted">Each rooftop has its own inventory, accounts, team and subscription. It starts with a free trial.</p>
-      <label class="field"><span>Dealership name</span><input name="name" required></label><div class="row"><span class="spacer"></span><button class="primary">Create</button></div></form>`);
+    const { el, close } = openModal(
+      'Add another dealership (rooftop)',
+      `<form class="stack" id="rooftop-form"><p class="small muted">Each rooftop has its own inventory, accounts, team and subscription. It starts with a free trial.</p>
+      <label class="field"><span>Dealership name</span><input name="name" required></label><div class="row"><span class="spacer"></span><button class="primary">Create</button></div></form>`,
+    );
     $('#rooftop-form', el).onsubmit = (e) => {
       e.preventDefault();
-      act(e.submitter, () => fetch('/api/me/dealerships', { method: 'POST', headers: { 'content-type': 'application/json', 'x-requested-with': 'fetch' }, body: JSON.stringify({ name: new FormData(e.target).get('name'), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }) }).then(async (r) => {
-        if (!r.ok) throw new Error((await r.json()).error);
-        close();
-        location.hash = '#/settings';
-        location.reload();
-      }));
+      act(e.submitter, () =>
+        fetch('/api/me/dealerships', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-requested-with': 'fetch' },
+          body: JSON.stringify({ name: new FormData(e.target).get('name'), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
+        }).then(async (r) => {
+          if (!r.ok) throw new Error((await r.json()).error);
+          close();
+          location.hash = '#/settings';
+          location.reload();
+        }),
+      );
     };
   };
 }
@@ -954,7 +1179,9 @@ async function loadShell() {
     ? `🟢 AI bot online<br><span class="small">${esc(meta.ai_model)}</span>`
     : '🟡 AI bot offline — using templates.<br><span class="small">Set ANTHROPIC_API_KEY to enable.</span>';
   $('#mode-badge').innerHTML =
-    dealer.autonomy === 'autopilot' ? '<a href="#/autopilot" class="badge good">🚀 Autopilot</a>' : '<a href="#/autopilot" class="badge info">🤝 Assist mode</a>';
+    dealer.autonomy === 'autopilot'
+      ? '<a href="#/autopilot" class="badge good">🚀 Autopilot</a>'
+      : '<a href="#/autopilot" class="badge info">🤝 Assist mode</a>';
 }
 
 async function route() {

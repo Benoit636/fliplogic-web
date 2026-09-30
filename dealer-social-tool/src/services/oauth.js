@@ -64,7 +64,12 @@ export function connectOptions(state, indexes) {
     const existing = get('SELECT id FROM accounts WHERE dealership_id = ? AND platform = ? AND external_id = ?', tenantId(), o.platform, o.external_id);
     if (existing) {
       saveTokens(existing.id, o);
-      updateRow('accounts', existing.id, { mode: 'live', display_name: o.display_name, enabled: 1, last_error: null }, ['mode', 'display_name', 'enabled', 'last_error']);
+      updateRow('accounts', existing.id, { mode: 'live', display_name: o.display_name, enabled: 1, last_error: null }, [
+        'mode',
+        'display_name',
+        'enabled',
+        'last_error',
+      ]);
       connected.push(existing.id);
     } else {
       connected.push(createAccount({ ...o, mode: 'live' }).id);

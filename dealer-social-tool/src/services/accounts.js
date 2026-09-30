@@ -33,7 +33,15 @@ export function accountForPlatform(platform) {
   return withSecrets(get('SELECT * FROM accounts WHERE dealership_id = ? AND platform = ? AND enabled = 1 ORDER BY id LIMIT 1', tenantId(), platform));
 }
 
-export function createAccount({ platform, display_name, mode = 'simulated', external_id = '', access_token = '', refresh_token = '', token_expires_at = null }) {
+export function createAccount({
+  platform,
+  display_name,
+  mode = 'simulated',
+  external_id = '',
+  access_token = '',
+  refresh_token = '',
+  token_expires_at = null,
+}) {
   if (!PLATFORMS[platform]) throw httpError(400, `Unknown platform "${platform}"`);
   if (!display_name) throw httpError(400, 'display_name is required');
   if (mode === 'live' && (!external_id || !access_token)) {

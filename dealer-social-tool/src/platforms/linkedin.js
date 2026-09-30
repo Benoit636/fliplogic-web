@@ -54,7 +54,12 @@ export const linkedinAdapter = {
   async refresh(account) {
     const { body } = await request('https://www.linkedin.com/oauth/v2/accessToken', {
       method: 'POST',
-      form: { grant_type: 'refresh_token', refresh_token: account.refresh_token, client_id: config.linkedinClientId, client_secret: config.linkedinClientSecret },
+      form: {
+        grant_type: 'refresh_token',
+        refresh_token: account.refresh_token,
+        client_id: config.linkedinClientId,
+        client_secret: config.linkedinClientSecret,
+      },
     });
     return { access_token: body.access_token, refresh_token: body.refresh_token, token_expires_at: expiresAt(body.expires_in) };
   },
@@ -76,7 +81,13 @@ export const linkedinOAuth = {
   async exchange({ code, redirectUri }) {
     const { body: token } = await request('https://www.linkedin.com/oauth/v2/accessToken', {
       method: 'POST',
-      form: { grant_type: 'authorization_code', code, redirect_uri: redirectUri, client_id: config.linkedinClientId, client_secret: config.linkedinClientSecret },
+      form: {
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: redirectUri,
+        client_id: config.linkedinClientId,
+        client_secret: config.linkedinClientSecret,
+      },
     });
     const { body: acls } = await request(`${API}/organizationAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED`, {
       token: token.access_token,
@@ -84,7 +95,9 @@ export const linkedinOAuth = {
     });
     const options = [];
     for (const acl of acls.elements || []) {
-      const id = String(acl.organization || '').split(':').pop();
+      const id = String(acl.organization || '')
+        .split(':')
+        .pop();
       if (!id) continue;
       const org = await request(`${API}/organizations/${id}`, { token: token.access_token, headers: headers() }).catch(() => ({ body: {} }));
       options.push({

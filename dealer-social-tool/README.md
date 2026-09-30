@@ -1,113 +1,116 @@
-# Dealer Social Tool
+# Dealer Social
 
-An AI-run social media manager for car dealerships. The bot writes posts from your real inventory,
-plans the calendar, publishes to your social accounts, triages comments/DMs/reviews, and reports on
-what's working. You choose how much it does on its own.
+**An AI social media manager for car dealerships, sold as a monthly subscription.**
 
-> This is a standalone project. It is not related to Fliplogic or Algo+ and shares no code with them.
+Each dealership signs up, connects its social pages and inventory, and the AI bot writes, schedules and
+publishes posts. It also triages comments, DMs and Google reviews and reports on results. You (the platform
+owner) see every customer, your revenue and usage in an admin console. Stripe handles billing.
 
-## What it does
+> This is a standalone product. It is not related to Fliplogic or Algo+ and shares no code with them.
 
-| Area | Features |
+- **Business model, pricing and go-to-market:** [`docs/BUSINESS_PLAN.md`](docs/BUSINESS_PLAN.md)
+- **Step-by-step launch checklist (accounts to create, keys to paste):** [`docs/LAUNCH_CHECKLIST.md`](docs/LAUNCH_CHECKLIST.md)
+
+## What's in the product
+
+| For dealerships | For you (the platform owner) |
 | --- | --- |
-| 🤖 **AI Assistant** | Chat with the bot ("plan next week", "post our newest arrival", "answer the inbox", "how did we do this month?"). It uses tools to act on inventory, posts, the calendar, the inbox, analytics and autopilot rules. |
-| ✍️ **Content Studio** | Pick a post type, vehicle and platforms. The bot writes a version tailored to each network (length, tone, hashtags, photo idea). You can edit, rewrite with AI, approve or schedule it. |
-| ✅ **Approvals** | Everything the bot writes waits for your OK in **Assist** mode. You can approve one post or a whole batch, or reject with a reason. |
-| 📅 **Calendar & queue** | A month view of scheduled, pending, published and failed posts. A background worker publishes each post when it's due. |
-| ⚙️ **Autopilot** | Recurring rules, for example "vehicle spotlight Mon–Sat 10:15 on Facebook + Instagram". The bot picks the right vehicle each time: the one featured least recently, the newest arrival, a price drop, or a sold car to celebrate. **Full autopilot** mode lets it publish and reply without asking. |
-| 💬 **Inbox** | Comments, DMs and reviews are triaged: sentiment, intent (lead, question, complaint, praise, spam), priority, and a suggested reply. In autopilot mode the bot answers simple messages. It escalates leads and complaints to a person and dismisses spam. |
-| 🚙 **Inventory** | Add vehicles by hand or import a CSV from your DMS (it recognises common column names). When you lower a price it's tracked as a price drop. Marking a car sold queues a celebration post. |
-| 📈 **Analytics** | Reach, engagement, clicks and leads, with breakdowns by platform and post type, daily reach, and your top posts. |
-| 🏢 **Settings** | Dealership profile and brand voice, the compliance line, default hashtags, post language, km or miles, and your social accounts. |
+| 🤖 AI assistant that plans, writes, schedules, publishes and reports | 🌐 Marketing site with pricing at `/` |
+| ✍️ Content studio: one idea, one post per network | 🧾 Self-serve signup with a 14-day free trial (no card needed) |
+| ✅ Approval queue, or full autopilot | 💳 Stripe Checkout, Customer Portal, signed webhooks and proration |
+| 📅 Calendar and recurring autopilot rules, on the dealer's own time zone | 📊 `/admin`: MRR, ARR, trials, past-due accounts, usage per dealership |
+| 💬 Inbox triage for comments, DMs and Google reviews, with lead detection and suggested replies | 🎁 Comp plans, extend trials, open any dealership for support |
+| 🚙 Inventory from CSV or an auto-synced feed. Price-drop, new-arrival and sold automations | 📏 Plan limits and usage metering (AI posts, assistant messages, accounts, seats) |
+| 📈 Analytics by network and post type | 🔐 Data isolated per dealership, tokens encrypted, CSRF protection and security headers |
+| 👥 Team roles (owner, manager, staff), invites, and multiple rooftops per login | 📨 Transactional email: welcome, invites, password reset, trial ending |
+| ⬇️ Data export at any time | 💾 Nightly database backups, Docker and Render deploy files |
 
-### Platforms
+### Networks
 
-| Platform | Simulated | Live publishing |
-| --- | --- | --- |
-| Facebook Page | ✅ | ✅ Graph API (text or photo posts, comment replies, metrics, comment sync, webhooks) |
-| Instagram Business | ✅ | ✅ Graph API (image posts, comment replies, metrics, comment sync, webhooks) |
-| TikTok, X, LinkedIn, Google Business Profile | ✅ | Not built yet. The adapter interface is in `src/platforms/`. |
+| Network | One-click connect | Publish | Metrics | Inbox |
+| --- | --- | --- | --- | --- |
+| Facebook Pages | ✅ Facebook Login | ✅ text and photo | ✅ | ✅ comments (sync and webhooks), replies |
+| Instagram Business | ✅ (with Facebook) | ✅ photo | ✅ | ✅ comments, replies |
+| Google Business Profile | ✅ Google OAuth | ✅ local posts | — | ✅ **reviews**, replies |
+| LinkedIn Company Page | ✅ LinkedIn OAuth | ✅ text | ✅ | — |
+| X | ✅ OAuth 2.0 (PKCE) | ✅ text | ✅ | — (reading replies needs a paid X API tier) |
+| TikTok | ✅ TikTok Login | ✅ photo carousel or video | — | — |
 
-**Simulated** accounts run the whole workflow without posting anything real, and they generate realistic
-engagement numbers. Use them for demos, training, or to try the bot before you connect real pages.
+Every network also has a **simulated** mode. It runs the whole workflow without posting anything, which is useful for demos and trials.
+A **Connect** button only turns on once you add that network's app keys to `.env`. See the launch checklist.
 
-## Quick start
+### Plans (edit in `src/plans.js`)
 
-Requirements: **Node.js 22.5 or newer** (it uses the built-in `node:sqlite`, so there's no database server to install).
+| | Starter $149/mo | Pro $299/mo | Elite $499/mo |
+| --- | --- | --- | --- |
+| Social accounts | 3 | 6 | 20 |
+| Team members | 3 | 10 | 50 |
+| AI-written posts per month | 150 | 600 | 2,000 |
+| AI assistant messages per month | — | 1,500 | 5,000 |
+| Autopilot rules | 2 (drafts only) | 15 | 100 |
+| Full autopilot and auto-replies | — | ✅ | ✅ |
+| Inventory feed auto-sync | — | ✅ | ✅ |
+
+Yearly billing costs 10× the monthly price (two months free). Every signup gets a 14-day trial of Pro.
+
+## Run it locally
+
+Requires **Node.js 22.5 or newer**. It uses the built-in SQLite (`node:sqlite`), so there's no database server to install.
 
 ```bash
 cd dealer-social-tool
 npm install
-cp .env.example .env        # add your ANTHROPIC_API_KEY to switch on the AI bot
-npm run seed                # optional: demo dealership, inventory, accounts and rules
-npm start                   # http://localhost:3000
+cp .env.example .env
+npm run seed      # demo dealership. Log in with demo@example.com / demo12345
+npm start         # http://localhost:3000
 ```
 
-Without an `ANTHROPIC_API_KEY`, everything still works. Posts are written from built-in templates, the
-inbox uses keyword triage, and only the chat assistant is switched off.
+Add `SUPERADMIN_EMAILS=demo@example.com` to `.env` to see the `/admin` console with the demo login.
 
-## Configuration (`.env`)
+The app works without any keys. Posts come from templates, the inbox uses keyword triage, billing shows plans
+but can't take payment yet, and emails are printed to the console. Each key you add turns on the real thing:
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `PORT` | `3000` | HTTP port |
-| `ADMIN_PASSWORD` | — | When set, the dashboard and API require HTTP Basic auth (any username) |
-| `DATABASE_PATH` | `./data/dealer-social.db` | SQLite file |
-| `ANTHROPIC_API_KEY` | — | Turns on the Claude-powered bot |
-| `AI_MODEL` | `claude-opus-5-5` | Claude model used for writing, triage and the assistant |
-| `AI_FALLBACKS` | on | Server-side refusal fallback (`fallbacks: "default"`); set `off` to disable |
-| `SCHEDULER_INTERVAL_SECONDS` | `30` | How often the worker publishes due posts and runs autopilot rules |
-| `META_VERIFY_TOKEN` / `META_APP_SECRET` | — | For the Meta webhook at `/webhooks/meta` (real-time comments; payload signatures are verified) |
+| Key | Turns on |
+| --- | --- |
+| `ANTHROPIC_API_KEY` | Claude writing, AI inbox triage and the AI assistant |
+| `STRIPE_SECRET_KEY` (+ `npm run stripe:setup`) | Paid subscriptions |
+| `RESEND_API_KEY` | Real emails |
+| `META_*`, `GOOGLE_*`, `LINKEDIN_*`, `X_*`, `TIKTOK_*` | The Connect buttons for each network |
 
-Autopilot times use the server's local time zone, so set `TZ`, for example `TZ=America/Moncton`.
+## Deploy
 
-## Connecting Facebook & Instagram (live)
+Pick one:
 
-1. Create a Meta app with the Pages and Instagram Graph API permissions
-   (`pages_manage_posts`, `pages_read_engagement`, `pages_manage_engagement`, `instagram_basic`,
-   `instagram_content_publish`, `instagram_manage_comments`).
-2. Get a long-lived **Page access token**.
-3. In **Settings → Social accounts**, add an account in **Live** mode:
-   - Facebook: the Page ID and the Page token.
-   - Instagram: the Instagram business account ID and the same Page token.
-4. Optional: point a Meta webhook at `https://your-host/webhooks/meta` (fields `feed` and `comments`) with your
-   `META_VERIFY_TOKEN`, so comments show up in the inbox in real time. Otherwise the worker syncs them every
-   few minutes.
+- **Render:** once this folder is its own repository, `render.yaml` is a ready-made Blueprint (Docker, a persistent disk, a health check and a generated `APP_SECRET`).
+- **Any VPS:** `docker compose up -d`, with Caddy or Nginx in front for HTTPS.
+- **Any Node host:** `npm ci --omit=dev && NODE_ENV=production npm start`, with `DATABASE_PATH` on persistent storage.
 
-## How the bot stays safe
+In production, `APP_SECRET` is required. It encrypts your customers' social tokens, so never change it after launch.
+The worker writes a database backup to `BACKUP_DIR` every night and keeps 14. Copy them off the server as well.
 
-- **Assist mode** (the default): nothing is published or replied to until a person approves it.
-  If the bot edits an approved post, the post goes back for review.
-- **Autopilot mode**: the bot publishes on schedule and answers praise and simple questions. It always
-  escalates leads, complaints and urgent messages to a person.
-- Vehicle posts are built only from inventory data. The bot is told never to invent prices, payments,
-  incentives or features. Your compliance line is added whenever a price appears.
-- Every action by a person, the bot, autopilot or the scheduler is written to the activity log, which you can see on the dashboard.
+SQLite on one server comfortably handles hundreds of dealerships. The data layer sits in `src/db.js` if you ever need to move to Postgres.
 
 ## Architecture
 
 ```
 src/
-  server.js            entry point (HTTP server + background worker)
-  app.js               Express app, Basic auth, Meta webhooks, error handling
-  routes/api.js        REST API used by the dashboard
-  db.js                SQLite schema & helpers (node:sqlite)
-  ai/
-    client.js          Anthropic SDK client, shared request settings, refusal handling
-    generator.js       platform-tailored copywriting (structured outputs)
-    inbox.js           comment/DM/review triage + suggested replies
-    agent.js           the chat bot: manual tool-use loop, append-only history
-    tools.js           tools the bot can call (zod-validated)
-    fallback.js        template writer used when no API key is set
-  services/            dealership, accounts, inventory, posts, content, publisher,
-                       autopilot, inbox, analytics, worker
-  platforms/           simulated + Meta (Facebook/Instagram) adapters
-public/                dashboard (vanilla JS, no build step)
-test/                  node:test suite, including a fake Claude API server
+  server.js / app.js     HTTP server, sessions, CSRF check, security headers, webhooks, pages
+  tenant.js              per-request dealership context (AsyncLocalStorage)
+  plans.js               plans, limits and entitlement rules
+  db.js                  SQLite schema migrations, helpers, backups
+  crypto.js              scrypt passwords, AES-GCM token encryption
+  time.js                time-zone math for schedules
+  routes/                auth, dealership API, admin API
+  ai/                    Claude client, copywriter, inbox triage, the agent with its tools, template fallback
+  services/              auth, billing (Stripe), entitlements, dealership, accounts, inventory (+ feed),
+                         posts, content, publisher, autopilot, inbox, analytics, admin, oauth, mailer, worker
+  platforms/             Meta, Google, LinkedIn, X, TikTok and simulated adapters (+ token refresh)
+public/                  landing, auth, app, admin and legal pages (vanilla JS, no build step)
+scripts/stripe-setup.js  creates Stripe products, prices, the portal and the webhook in one go
+test/                    node:test suite, with fake Claude and Stripe
 ```
 
-Post lifecycle: `draft → pending_approval → approved/scheduled → publishing → published`
-(or `failed` / `rejected`).
+Post lifecycle: `draft → pending_approval → approved/scheduled → publishing → published` (or `failed` / `rejected`).
 
 ## Tests
 
@@ -115,4 +118,6 @@ Post lifecycle: `draft → pending_approval → approved/scheduled → publishin
 npm test
 ```
 
-The suite uses in-memory databases and a local fake Messages API, so it never calls Claude or any social network.
+The tests cover data isolation between dealerships, authentication, invites, password reset, plan limits, trial
+expiry, Stripe webhook syncing and idempotency, token encryption, roles over HTTP, CSRF, the AI agent loop
+(against a fake Claude API), scheduling across daylight-saving changes, CSV import and publishing.

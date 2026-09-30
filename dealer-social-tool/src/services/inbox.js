@@ -7,6 +7,7 @@ import { isAutopilot } from './dealership.js';
 import { getPost, listPosts } from './posts.js';
 import { httpError } from './errors.js';
 import { tenantId } from '../tenant.js';
+import { forwardLead } from './leads.js';
 
 const present = (row) => row && { ...row, is_lead: !!row.is_lead };
 
@@ -71,6 +72,10 @@ export async function ingestMessage(input) {
   const id = Number(lastInsertRowid);
   logActivity('bot', 'inbox.received', `${PLATFORMS[message.platform].label} ${message.kind} from ${message.author} → ${triage.intent || 'untriaged'}`);
 
+  if (triage.is_lead) {
+    await forwardLead(getMessage(id)).catch((err) => logActivity('bot', 'lead.forward_failed', err.message));
+  }
+
   if (isAutopilot()) {
     if (triage.intent === 'spam') dismissMessage(id, 'bot');
     else if (triage.intent === 'lead' || triage.intent === 'complaint' || triage.priority === 'urgent') escalateMessage(id, 'bot');
@@ -100,9 +105,14 @@ export function dismissMessage(id, actor = 'user') {
   return getMessage(id);
 }
 
-export function escalateMessage(id, actor = 'user') {
+export async function escalateMessage(id, actor = 'user') {
   run(`UPDATE inbox_messages SET status = 'escalated' WHERE id = ? AND dealership_id = ?`, id, tenantId());
   logActivity(actor, 'inbox.escalated', `#${id}`);
+  // A person escalating a message marks it as a lead worth sending to the CRM.
+  if (actor === 'user') {
+    run('UPDATE inbox_messages SET is_lead = 1 WHERE id = ? AND dealership_id = ?', id, tenantId());
+    await forwardLead(getMessage(id)).catch((err) => logActivity('system', 'lead.forward_failed', err.message));
+  }
   return getMessage(id);
 }
 

@@ -131,6 +131,41 @@ tenantTest('Stripe webhooks keep the subscription in sync (idempotently)', async
   assert.equal(overview.totals.dealerships, 1);
 });
 
+tenantTest('leads are forwarded to the CRM as ADF/XML once', async (a) => {
+  const { updateDealership } = await import('../src/services/dealership.js');
+  const { ingestMessage, escalateMessage } = await import('../src/services/inbox.js');
+  updateDealership({ crm_lead_email: 'leads@crm.example' });
+  const post = createPost({ platform: 'facebook', content: 'F-150!', vehicle_id: a.truck.id });
+  const before = outbox.length;
+  const lead = await ingestMessage({ platform: 'facebook', author: 'Jess <Martin>', text: 'Is this still available? Price?', post_id: post.id });
+  assert.equal(lead.is_lead, true);
+  assert.ok(lead.forwarded_at);
+  const mail = outbox.at(-1);
+  assert.equal(outbox.length, before + 1);
+  assert.equal(mail.to, 'leads@crm.example');
+  assert.match(mail.text, /<\?adf version="1.0"\?>/);
+  assert.match(mail.text, /<name part="full">Jess &lt;Martin&gt;<\/name>/);
+  assert.match(mail.text, /<model>F-150<\/model>/);
+  await escalateMessage(lead.id);
+  assert.equal(outbox.length, before + 1, 'not forwarded twice');
+
+  const question = await ingestMessage({ platform: 'facebook', author: 'Amy', text: 'Are you open Sunday?' });
+  assert.equal(question.is_lead, false);
+  await escalateMessage(question.id);
+  assert.equal(outbox.length, before + 2, 'escalating by hand forwards it');
+});
+
+tenantTest('monthly results email goes out once on the 1st, local time', async () => {
+  const { sendMonthlyReports } = await import('../src/services/reports.js');
+  const firstOfMonth = new Date('2026-11-01T13:00:00Z'); // 09:00 in Moncton
+  const before = outbox.length;
+  assert.equal(await sendMonthlyReports(firstOfMonth), 1);
+  assert.match(outbox.at(-1).subject, /results this month/);
+  assert.equal(await sendMonthlyReports(firstOfMonth), 0, 'only once per month');
+  assert.equal(await sendMonthlyReports(new Date('2026-11-02T13:00:00Z')), 0);
+  assert.equal(outbox.length, before + 1);
+});
+
 // ---- HTTP level ----
 let server;
 let base;

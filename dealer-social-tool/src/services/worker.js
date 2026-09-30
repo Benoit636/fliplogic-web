@@ -11,6 +11,7 @@ import { syncComments } from './inbox.js';
 import { syncInventoryFeed } from './inventory.js';
 import { getDealershipById } from './dealership.js';
 import { sendEmail } from './mailer.js';
+import { sendMonthlyReports } from './reports.js';
 
 let timer;
 let running = false;
@@ -84,6 +85,7 @@ export async function tick() {
     }
     if (ticks % 120 === 0) {
       await sendTrialReminders();
+      await sendMonthlyReports();
       run('DELETE FROM sessions WHERE expires_at < ?', nowIso());
       const today = new Date().toISOString().slice(0, 10);
       if (today !== lastBackupDay && config.env !== 'test') {

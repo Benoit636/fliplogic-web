@@ -82,7 +82,9 @@ export function createApp() {
     get('SELECT 1 AS ok');
     res.json({ ok: true });
   });
-  app.get('/api/public/plans', (req, res) => res.json({ plans: PLANS, trial_days: config.trialDays, product_name: config.productName, sales_email: config.supportEmail }));
+  app.get('/api/public/plans', (req, res) =>
+    res.json({ plans: PLANS, trial_days: config.trialDays, product_name: config.productName, sales_email: config.supportEmail }),
+  );
 
   app.use('/api/auth', authRoutes);
   app.use('/api/me', meRoutes);

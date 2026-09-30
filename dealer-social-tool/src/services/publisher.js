@@ -29,7 +29,11 @@ export async function publishPost(id, actor = 'system') {
       if (account.mode === 'live') recordAccountError(account.id, err.message);
       throw err;
     }
-    logActivity(actor, 'post.published', `#${id} to ${PLATFORMS[post.platform].label} (${account.display_name}${account.mode === 'simulated' ? ', simulated' : ''})`);
+    logActivity(
+      actor,
+      'post.published',
+      `#${id} to ${PLATFORMS[post.platform].label} (${account.display_name}${account.mode === 'simulated' ? ', simulated' : ''})`,
+    );
   } catch (err) {
     markFailed(id, err.message);
     logActivity(actor, 'post.failed', `#${id}: ${err.message}`);

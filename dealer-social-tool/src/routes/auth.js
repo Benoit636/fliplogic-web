@@ -12,6 +12,7 @@ import {
   listUserDealerships,
   addDealershipForUser,
   changePassword,
+  throttle,
 } from '../services/auth.js';
 import { getDealershipById } from '../services/dealership.js';
 import { entitlements } from '../plans.js';
@@ -32,6 +33,7 @@ export function setSessionCookie(res, token) {
 export const authRoutes = express.Router();
 
 authRoutes.post('/signup', (req, res) => {
+  throttle(`signup:${req.ip}`, 20);
   const { name, email, password, dealership_name, timezone } = req.body || {};
   const result = signup({ name, email, password, dealershipName: dealership_name, timezone });
   setSessionCookie(res, result.token);
@@ -51,6 +53,7 @@ authRoutes.post('/logout', (req, res) => {
 });
 
 authRoutes.post('/forgot', async (req, res) => {
+  throttle(`forgot:${req.ip}`, 20);
   await requestPasswordReset(req.body?.email);
   res.json({ ok: true, message: 'If that email has an account, a reset link is on its way.' });
 });
@@ -63,7 +66,13 @@ authRoutes.post('/reset', (req, res) => {
 
 authRoutes.get('/invite/:token', (req, res) => {
   const { invite, dealershipName, existingUser } = inviteInfo(req.params.token);
-  res.json({ email: invite.email, role: invite.role, dealership_name: dealershipName, existing_user: existingUser, logged_in_as: req.session?.user?.email || null });
+  res.json({
+    email: invite.email,
+    role: invite.role,
+    dealership_name: dealershipName,
+    existing_user: existingUser,
+    logged_in_as: req.session?.user?.email || null,
+  });
 });
 
 authRoutes.post('/invite/:token/accept', (req, res) => {
@@ -82,7 +91,14 @@ meRoutes.get('/', (req, res) => {
   res.json({
     user: req.session.user,
     role: req.session.role,
-    dealership: d && { id: d.id, name: d.name, plan: d.plan, subscription_status: d.subscription_status, trial_ends_at: d.trial_ends_at, entitlements: entitlements(d) },
+    dealership: d && {
+      id: d.id,
+      name: d.name,
+      plan: d.plan,
+      subscription_status: d.subscription_status,
+      trial_ends_at: d.trial_ends_at,
+      entitlements: entitlements(d),
+    },
     dealerships: listUserDealerships(req.session.user.id),
     product_name: config.productName,
   });

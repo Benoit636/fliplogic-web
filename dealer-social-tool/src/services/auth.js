@@ -71,16 +71,15 @@ export function destroySession(token) {
 }
 
 export function switchDealership(session, dealershipId) {
-  const allowed = get('SELECT 1 FROM memberships WHERE user_id = ? AND dealership_id = ?', session.user.id, dealershipId) || (session.user.is_superadmin && getDealershipById(dealershipId));
+  const allowed =
+    get('SELECT 1 FROM memberships WHERE user_id = ? AND dealership_id = ?', session.user.id, dealershipId) ||
+    (session.user.is_superadmin && getDealershipById(dealershipId));
   if (!allowed) throw httpError(403, 'You are not a member of that dealership');
   run('UPDATE sessions SET dealership_id = ? WHERE token_hash = ?', dealershipId, session.tokenHash);
 }
 
 export function listUserDealerships(userId) {
-  return all(
-    `SELECT d.id, d.name, m.role FROM memberships m JOIN dealerships d ON d.id = m.dealership_id WHERE m.user_id = ? ORDER BY d.name`,
-    userId,
-  );
+  return all(`SELECT d.id, d.name, m.role FROM memberships m JOIN dealerships d ON d.id = m.dealership_id WHERE m.user_id = ? ORDER BY d.name`, userId);
 }
 
 export function signup({ name, email, password, dealershipName, timezone }) {
@@ -112,18 +111,18 @@ export function addDealershipForUser(userId, { name, timezone }) {
 
 // Simple in-memory brute-force protection per email and per IP.
 const attempts = new Map();
-function throttle(key) {
+export function throttle(key, max = 10) {
   const now = Date.now();
   const entry = attempts.get(key) || { count: 0, reset: now + 15 * 60_000 };
   if (now > entry.reset) Object.assign(entry, { count: 0, reset: now + 15 * 60_000 });
   entry.count++;
   attempts.set(key, entry);
-  if (entry.count > 10) throw httpError(429, 'Too many attempts. Try again in 15 minutes.');
+  if (entry.count > max) throw httpError(429, 'Too many attempts. Try again in 15 minutes.');
 }
 
 export function login({ email, password, ip = '' }) {
   throttle(`email:${String(email).toLowerCase()}`);
-  if (ip) throttle(`ip:${ip}`);
+  if (ip) throttle(`ip:${ip}`, 60); // dealerships share one office IP
   const user = getUserByEmail(email || '');
   if (!user || !verifyPassword(String(password || ''), user.password_hash)) throw httpError(401, 'Wrong email or password');
   attempts.delete(`email:${String(email).toLowerCase()}`);

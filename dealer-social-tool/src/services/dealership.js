@@ -22,6 +22,7 @@ const EDITABLE = [
   'timezone',
   'inventory_feed_url',
   'feed_marks_sold',
+  'crm_lead_email',
 ];
 
 export function getDealershipById(id) {
@@ -55,6 +56,7 @@ export function updateDealership(fields) {
   }
   if (fields.distance_unit && !['km', 'mi'].includes(fields.distance_unit)) throw httpError(400, 'distance_unit must be "km" or "mi"');
   if (fields.timezone && !isValidTimeZone(fields.timezone)) throw httpError(400, 'Unknown time zone');
+  if (fields.crm_lead_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fields.crm_lead_email)) throw httpError(400, 'CRM lead email is not a valid email address');
   if (fields.inventory_feed_url && !/^https?:\/\//i.test(fields.inventory_feed_url)) throw httpError(400, 'Feed URL must start with http(s)://');
   if (fields.inventory_feed_url && !currentEntitlements().features.inventoryFeed) {
     throw httpError(402, 'Automatic inventory feeds are available on the Pro plan and above');
@@ -74,7 +76,16 @@ export function updateBilling(id, fields) {
     'dealerships',
     id,
     fields,
-    ['plan', 'billing_interval', 'subscription_status', 'status_changed_at', 'trial_ends_at', 'current_period_end', 'stripe_customer_id', 'stripe_subscription_id'],
+    [
+      'plan',
+      'billing_interval',
+      'subscription_status',
+      'status_changed_at',
+      'trial_ends_at',
+      'current_period_end',
+      'stripe_customer_id',
+      'stripe_subscription_id',
+    ],
     { tenant: false },
   );
   return getDealershipById(id);

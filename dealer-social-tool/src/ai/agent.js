@@ -28,7 +28,9 @@ How you work:
   Keep replies concise and skimmable; use short bullet lists when listing posts.
 
 Platforms: ${PLATFORM_LIST}.
-Post types: ${Object.entries(POST_TYPES).map(([k, v]) => `${k} (${v})`).join(', ')}.`;
+Post types: ${Object.entries(POST_TYPES)
+  .map(([k, v]) => `${k} (${v})`)
+  .join(', ')}.`;
 
 function timeHeader(now = new Date(), timeZone = getDealership().timezone) {
   const local = now.toLocaleString('en-US', { timeZone, weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -43,7 +45,13 @@ function loadHistory(conversationId) {
 }
 
 function save(conversationId, role, content) {
-  run('INSERT INTO chat_messages (dealership_id, conversation_id, role, content) VALUES (?, ?, ?, ?)', tenantId(), conversationId, role, JSON.stringify(content));
+  run(
+    'INSERT INTO chat_messages (dealership_id, conversation_id, role, content) VALUES (?, ?, ?, ?)',
+    tenantId(),
+    conversationId,
+    role,
+    JSON.stringify(content),
+  );
 }
 
 /** Messages as the UI shows them: user text + assistant text, with the tools the bot used. */
@@ -52,10 +60,16 @@ export function conversationTranscript(conversationId) {
   for (const m of loadHistory(conversationId)) {
     const blocks = typeof m.content === 'string' ? [{ type: 'text', text: m.content }] : m.content;
     if (m.role === 'user') {
-      const text = blocks.filter((b) => b.type === 'text').map((b) => b.text.replace(/^\[Current local time:[^\]]*\]\n?/, '')).join('\n');
+      const text = blocks
+        .filter((b) => b.type === 'text')
+        .map((b) => b.text.replace(/^\[Current local time:[^\]]*\]\n?/, ''))
+        .join('\n');
       if (text) out.push({ role: 'user', text });
     } else {
-      const text = blocks.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+      const text = blocks
+        .filter((b) => b.type === 'text')
+        .map((b) => b.text)
+        .join('\n');
       const tools = blocks.filter((b) => b.type === 'tool_use').map((b) => b.name);
       const last = out[out.length - 1];
       if (last?.role === 'assistant') {

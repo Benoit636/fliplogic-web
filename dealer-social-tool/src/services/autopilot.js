@@ -28,7 +28,9 @@ export function presentRule(row) {
 /** Next run time strictly after `from`, on the dealership's local clock. */
 export function computeNextRun(rule, from = new Date(), timeZone = getDealership().timezone) {
   const days = rule.days_of_week?.length ? rule.days_of_week : [0, 1, 2, 3, 4, 5, 6];
-  const [hour, minute] = String(rule.time_of_day || '10:00').split(':').map(Number);
+  const [hour, minute] = String(rule.time_of_day || '10:00')
+    .split(':')
+    .map(Number);
   const today = localParts(from, timeZone);
   for (let offset = 0; offset <= 8; offset++) {
     // Noon UTC on the local calendar day avoids DST edge cases when stepping days.

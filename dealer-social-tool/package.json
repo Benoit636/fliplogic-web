@@ -1,7 +1,7 @@
 {
   "name": "dealer-social-tool",
-  "version": "0.1.0",
-  "description": "AI-run social media manager for car dealerships: content generation, approvals, scheduling, publishing, inbox and analytics.",
+  "version": "1.0.0",
+  "description": "AI social media manager for car dealerships — multi-dealership subscription SaaS.",
   "type": "module",
   "private": true,
   "engines": {
@@ -11,7 +11,9 @@
     "start": "node --disable-warning=ExperimentalWarning src/server.js",
     "dev": "node --disable-warning=ExperimentalWarning --watch src/server.js",
     "seed": "node --disable-warning=ExperimentalWarning src/seed.js",
-    "test": "node --disable-warning=ExperimentalWarning --test 'test/*.test.js'"
+    "test": "node --disable-warning=ExperimentalWarning --test 'test/*.test.js'",
+    "stripe:setup": "node --disable-warning=ExperimentalWarning scripts/stripe-setup.js",
+    "backup": "node --disable-warning=ExperimentalWarning -e \"import('./src/db.js').then(m=>{m.openDb();console.log(m.backupDatabase())})\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.129.0",

@@ -6,11 +6,17 @@ import { publishDuePosts, publishPost } from '../src/services/publisher.js';
 import { updateDealership } from '../src/services/dealership.js';
 import { getVehicle } from '../src/services/inventory.js';
 
-
 test('user-generated posts start as drafts, one per platform, with vehicle photos attached', async (fixtures) => {
-  const { posts, engine } = await createPostsFromIdea({ postType: 'vehicle_spotlight', vehicleId: fixtures.truck.id, platforms: ['facebook', 'instagram', 'x'] });
+  const { posts, engine } = await createPostsFromIdea({
+    postType: 'vehicle_spotlight',
+    vehicleId: fixtures.truck.id,
+    platforms: ['facebook', 'instagram', 'x'],
+  });
   assert.equal(engine, 'templates');
-  assert.deepEqual(posts.map((p) => p.platform), ['facebook', 'instagram', 'x']);
+  assert.deepEqual(
+    posts.map((p) => p.platform),
+    ['facebook', 'instagram', 'x'],
+  );
   assert.ok(posts.every((p) => p.status === 'draft'));
   assert.deepEqual(posts[1].media, ['https://img.example/f150.jpg']);
   assert.match(posts[0].content, /F-150/);

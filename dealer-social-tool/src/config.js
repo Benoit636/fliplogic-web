@@ -16,7 +16,11 @@ function loadDotEnv(file = path.resolve(process.cwd(), '.env')) {
 loadDotEnv();
 
 const env = process.env;
-const list = (v) => (v || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+const list = (v) =>
+  (v || '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
 
 export const config = {
   env: env.NODE_ENV || 'development',
@@ -93,13 +97,4 @@ export const POST_TYPE_KEYS = Object.keys(POST_TYPES);
 // Post types that are about one specific vehicle.
 export const VEHICLE_POST_TYPES = ['vehicle_spotlight', 'new_arrival', 'price_drop', 'sold_celebration'];
 
-export const POST_STATUSES = [
-  'draft',
-  'pending_approval',
-  'approved',
-  'scheduled',
-  'publishing',
-  'published',
-  'failed',
-  'rejected',
-];
+export const POST_STATUSES = ['draft', 'pending_approval', 'approved', 'scheduled', 'publishing', 'published', 'failed', 'rejected'];

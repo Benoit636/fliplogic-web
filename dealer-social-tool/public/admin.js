@@ -46,9 +46,10 @@ async function render() {
       <div class="card-head"><h2>Customers</h2><input id="search" placeholder="Search dealership, owner, city…" value="${esc(filter)}" style="max-width:320px;margin-left:auto"></div>
       <div class="table-wrap"><table>
         <tr><th>Dealership</th><th>Owner</th><th>Plan</th><th>Status</th><th class="num">MRR</th><th>Trial / renews</th><th class="num">Accts (live)</th><th class="num">Vehicles</th><th class="num">Posts 30d</th><th class="num">AI posts / chats</th><th>Last active</th><th></th></tr>
-        ${rows
-          .map(
-            (d) => `<tr>
+        ${
+          rows
+            .map(
+              (d) => `<tr>
           <td><strong>${esc(d.name)}</strong><div class="small muted">#${d.id} · ${esc(d.city || '')} · since ${date(d.created_at)}</div></td>
           <td class="small">${esc(d.owner_email || '—')}</td>
           <td>${esc(d.plan)}${d.billing_interval === 'year' ? ' <span class="badge">yearly</span>' : ''}</td>
@@ -60,13 +61,14 @@ async function render() {
           <td class="num">${d.published_30d}</td>
           <td class="num">${d.ai_posts_month} / ${d.ai_chats_month}</td>
           <td class="small">${date(d.last_user_activity)}</td>
-          <td class="row" style="flex-wrap:nowrap">
+          <td><div class="row" style="flex-wrap:nowrap">
             <button class="small" data-open="${d.id}">Open</button>
             <button class="small" data-trial="${d.id}">+14d trial</button>
             <button class="small" data-edit="${d.id}" data-plan="${esc(d.plan)}" data-status="${esc(d.subscription_status)}">Plan…</button>
-          </td></tr>`,
-          )
-          .join('') || '<tr><td colspan="12"><div class="empty">No dealerships yet</div></td></tr>'}
+          </div></td></tr>`,
+            )
+            .join('') || '<tr><td colspan="12"><div class="empty">No dealerships yet</div></td></tr>'
+        }
       </table></div>
       <p class="small muted">“Plan…” overrides are for pilots, comped accounts and sales-led deals. Stripe-billed changes should be made in Stripe; webhooks keep this table in sync.</p>
     </div>`;

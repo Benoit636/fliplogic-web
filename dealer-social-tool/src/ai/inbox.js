@@ -59,7 +59,8 @@ export function fallbackTriage(message, dealer) {
   if (has('http://', 'https://', 'crypto', 'follow for follow', 'dm me for', 'giveaway winner')) {
     return { sentiment: 'neutral', intent: 'spam', priority: 'low', is_lead: false, suggested_reply: '' };
   }
-  const negative = has('terrible', 'worst', 'rude', 'scam', 'never again', 'awful', 'disappointed', 'problem', 'broken', 'angry') || (message.rating && message.rating <= 2);
+  const negative =
+    has('terrible', 'worst', 'rude', 'scam', 'never again', 'awful', 'disappointed', 'problem', 'broken', 'angry') || (message.rating && message.rating <= 2);
   if (negative) {
     return {
       sentiment: 'negative',

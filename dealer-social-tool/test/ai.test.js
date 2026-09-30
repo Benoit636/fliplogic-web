@@ -10,7 +10,8 @@ let responder = () => ({});
 let copyVariants = null;
 const copywriter = (body) => {
   const platforms = body.messages[0].content.match(/platforms: (.*)\./)[1].split(', ');
-  const variants = copyVariants ?? platforms.map((platform) => ({ platform, title: 'AI', content: `AI copy for ${platform}`, hashtags: ['#AI'], image_idea: '' }));
+  const variants =
+    copyVariants ?? platforms.map((platform) => ({ platform, title: 'AI', content: `AI copy for ${platform}`, hashtags: ['#AI'], image_idea: '' }));
   return { stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ variants }) }] };
 };
 const server = http.createServer((req, res) => {
@@ -93,11 +94,14 @@ test('the bot runs tools, keeps append-only history, and respects assist mode', 
 
   const result = await mods.agent.chat('conv-1', 'Post our new F-150');
   assert.match(result.reply, /Drafted 2 posts/);
-  assert.deepEqual(result.actions.map((a) => [a.tool, a.ok]), [
-    ['get_overview', true],
-    ['generate_posts', true],
-    ['publish_post_now', false],
-  ]);
+  assert.deepEqual(
+    result.actions.map((a) => [a.tool, a.ok]),
+    [
+      ['get_overview', true],
+      ['generate_posts', true],
+      ['publish_post_now', false],
+    ],
+  );
   assert.equal(mods.posts.listPosts({ status: 'pending_approval' }).length, 2);
 
   const second = requests.find((r, i) => i > 0 && !r.body.output_config?.format).body;

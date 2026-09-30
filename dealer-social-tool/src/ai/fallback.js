@@ -35,13 +35,21 @@ function body(postType, v, d, instructions) {
     case 'event':
       return [`📅 You're invited! Join us at ${d.name}.`, instructions || 'Food, fun and test drives for the whole family.'];
     case 'service_tip':
-      return ['🔧 Service tip of the week:', instructions || 'Check your tire pressure monthly — it improves fuel economy, handling and tire life.', `Our service team is here to help.`];
+      return [
+        '🔧 Service tip of the week:',
+        instructions || 'Check your tire pressure monthly — it improves fuel economy, handling and tire life.',
+        `Our service team is here to help.`,
+      ];
     case 'review_highlight':
-      return ['⭐⭐⭐⭐⭐ Our customers say it best:', instructions ? `"${instructions}"` : '"Amazing experience from start to finish!"', `Thank you for trusting ${d.name}.`];
+      return [
+        '⭐⭐⭐⭐⭐ Our customers say it best:',
+        instructions ? `"${instructions}"` : '"Amazing experience from start to finish!"',
+        `Thank you for trusting ${d.name}.`,
+      ];
     case 'holiday':
       return [`🎊 Happy holidays from the whole team at ${d.name}!`, instructions || 'Wishing you and your family safe travels.'];
     case 'engagement':
-      return ['🤔 Quick question for our community:', instructions || "What was your very first car? Tell us in the comments! 👇"];
+      return ['🤔 Quick question for our community:', instructions || 'What was your very first car? Tell us in the comments! 👇'];
     case 'team_spotlight':
       return [`👋 Meet the team at ${d.name}!`, instructions || 'The friendly faces who make every visit a great one.'];
     default:

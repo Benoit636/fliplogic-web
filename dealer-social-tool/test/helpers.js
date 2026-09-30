@@ -19,7 +19,15 @@ export function addDealership(email, name) {
   updateDealership({ city: 'Moncton', phone: '555-0100', default_hashtags: '#TestMotors' });
   createAccount({ platform: 'facebook', display_name: name });
   createAccount({ platform: 'instagram', display_name: '@testmotors' });
-  const truck = createVehicle({ year: 2022, make: 'Ford', model: 'F-150', trim: 'XLT', price: 44900, mileage: 58000, photos: ['https://img.example/f150.jpg'] });
+  const truck = createVehicle({
+    year: 2022,
+    make: 'Ford',
+    model: 'F-150',
+    trim: 'XLT',
+    price: 44900,
+    mileage: 58000,
+    photos: ['https://img.example/f150.jpg'],
+  });
   const suv = createVehicle({ year: 2024, make: 'Volkswagen', model: 'Tiguan', price: 36495, mileage: 18000 });
   return { truck, suv, user, dealership, token };
 }

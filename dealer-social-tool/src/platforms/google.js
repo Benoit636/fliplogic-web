@@ -77,10 +77,9 @@ export const googleOAuth = {
     const { body: accounts } = await request('https://mybusinessaccountmanagement.googleapis.com/v1/accounts', { token: token.access_token });
     const options = [];
     for (const acct of accounts.accounts || []) {
-      const { body: locs } = await request(
-        `https://mybusinessbusinessinformation.googleapis.com/v1/${acct.name}/locations?readMask=name,title&pageSize=100`,
-        { token: token.access_token },
-      ).catch(() => ({ body: {} }));
+      const { body: locs } = await request(`https://mybusinessbusinessinformation.googleapis.com/v1/${acct.name}/locations?readMask=name,title&pageSize=100`, {
+        token: token.access_token,
+      }).catch(() => ({ body: {} }));
       for (const loc of locs.locations || []) {
         options.push({
           platform: 'google_business',

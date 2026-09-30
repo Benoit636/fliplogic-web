@@ -45,7 +45,10 @@ const TOOLS = [
         accounts: listAccounts().map((a) => ({ platform: a.platform, name: a.display_name, mode: a.mode, enabled: a.enabled })),
         posts_by_status: statusCounts(),
         inbox: inboxCounts(),
-        inventory: get(`SELECT SUM(status='available') AS available, SUM(status='sold') AS sold, COUNT(*) AS total FROM vehicles WHERE dealership_id = ?`, tenantId()),
+        inventory: get(
+          `SELECT SUM(status='available') AS available, SUM(status='sold') AS sold, COUNT(*) AS total FROM vehicles WHERE dealership_id = ?`,
+          tenantId(),
+        ),
       };
     },
   },
@@ -111,7 +114,8 @@ const TOOLS = [
   },
   {
     name: 'list_posts',
-    description: 'List posts, newest first. Filter by status (comma separated: draft,pending_approval,approved,scheduled,published,failed,rejected), platform, or date range.',
+    description:
+      'List posts, newest first. Filter by status (comma separated: draft,pending_approval,approved,scheduled,published,failed,rejected), platform, or date range.',
     schema: z.object({
       status: z.string().optional(),
       platform: platformEnum.optional(),
@@ -171,26 +175,27 @@ const TOOLS = [
       leads_only: z.boolean().optional(),
     }),
     run: ({ status, leads_only }) =>
-      listMessages({ status, lead: leads_only }).slice(0, 40).map((m) => ({
-        id: m.id,
-        platform: m.platform,
-        kind: m.kind,
-        author: m.author,
-        text: m.text,
-        rating: m.rating,
-        intent: m.intent,
-        sentiment: m.sentiment,
-        priority: m.priority,
-        is_lead: m.is_lead,
-        status: m.status,
-        suggested_reply: m.suggested_reply,
-        reply: m.reply,
-      })),
+      listMessages({ status, lead: leads_only })
+        .slice(0, 40)
+        .map((m) => ({
+          id: m.id,
+          platform: m.platform,
+          kind: m.kind,
+          author: m.author,
+          text: m.text,
+          rating: m.rating,
+          intent: m.intent,
+          sentiment: m.sentiment,
+          priority: m.priority,
+          is_lead: m.is_lead,
+          status: m.status,
+          suggested_reply: m.suggested_reply,
+          reply: m.reply,
+        })),
   },
   {
     name: 'reply_to_message',
-    description:
-      'Reply to a comment/DM/review. In autopilot mode the reply is sent. In assist mode it is saved as the suggested reply for a human to send.',
+    description: 'Reply to a comment/DM/review. In autopilot mode the reply is sent. In assist mode it is saved as the suggested reply for a human to send.',
     schema: z.object({ message_id: z.number().int(), text: z.string().min(1) }),
     run: async ({ message_id, text }) => {
       if (!getMessage(message_id)) throw new Error('Message not found');

@@ -19,7 +19,10 @@ export function dealershipBrief(d) {
 }
 
 export const PLATFORM_GUIDE = Object.entries(PLATFORMS)
-  .map(([key, p]) => `- ${key} (${p.label}): max ${p.maxChars} characters including hashtags, up to ${p.maxHashtags} hashtags${p.requiresMedia ? ', always accompanied by a photo/video' : ''}`)
+  .map(
+    ([key, p]) =>
+      `- ${key} (${p.label}): max ${p.maxChars} characters including hashtags, up to ${p.maxHashtags} hashtags${p.requiresMedia ? ', always accompanied by a photo/video' : ''}`,
+  )
   .join('\n');
 
 export const COPYWRITER_RULES = `You are the social media copywriter for a car dealership.

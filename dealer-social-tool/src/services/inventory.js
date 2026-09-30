@@ -1,22 +1,9 @@
 import { all, get, run, updateRow, parseJson, logActivity, nowIso } from '../db.js';
 import { tenantId } from '../tenant.js';
+import { assertPublicUrl } from '../net.js';
 import { httpError } from './errors.js';
 
-const FIELDS = [
-  'stock_number',
-  'vin',
-  'year',
-  'make',
-  'model',
-  'trim',
-  'condition',
-  'price',
-  'mileage',
-  'exterior_color',
-  'features',
-  'photos',
-  'status',
-];
+const FIELDS = ['stock_number', 'vin', 'year', 'make', 'model', 'trim', 'condition', 'price', 'mileage', 'exterior_color', 'features', 'photos', 'status'];
 
 export function presentVehicle(row) {
   if (!row) return row;
@@ -61,11 +48,7 @@ export function listVehicles({ status, q, limit = 500 } = {}) {
     where.push("(make || ' ' || model || ' ' || trim || ' ' || stock_number || ' ' || vin || ' ' || year) LIKE ?");
     params.push(`%${q}%`);
   }
-  return all(
-    `SELECT * FROM vehicles WHERE ${where.join(' AND ')} ORDER BY created_at DESC, id DESC LIMIT ?`,
-    ...params,
-    Number(limit),
-  ).map(presentVehicle);
+  return all(`SELECT * FROM vehicles WHERE ${where.join(' AND ')} ORDER BY created_at DESC, id DESC LIMIT ?`, ...params, Number(limit)).map(presentVehicle);
 }
 
 export function getVehicle(id) {
@@ -237,7 +220,8 @@ export function importVehiclesCsv(text, { actor = 'user' } = {}) {
  */
 export async function syncInventoryFeed(dealer) {
   if (!dealer.inventory_feed_url) return null;
-  const res = await fetch(dealer.inventory_feed_url, { signal: AbortSignal.timeout(30_000) });
+  await assertPublicUrl(dealer.inventory_feed_url);
+  const res = await fetch(dealer.inventory_feed_url, { signal: AbortSignal.timeout(30_000), redirect: 'error' });
   if (!res.ok) throw new Error(`Feed download failed: HTTP ${res.status}`);
   const text = await res.text();
   const result = importVehiclesCsv(text, { actor: 'feed' });

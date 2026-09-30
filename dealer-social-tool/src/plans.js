@@ -44,10 +44,10 @@ export const PLANS = {
     highlights: [
       'Up to 20 social accounts',
       '2,000 AI-written posts / month',
+      '5,000 AI assistant messages / month',
       'Everything in Pro',
-      'Bilingual posting (e.g. English + French)',
+      'Up to 50 team members',
       'Priority support & onboarding call',
-      'Multi-rooftop switching for groups',
     ],
   },
 };

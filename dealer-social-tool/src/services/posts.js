@@ -232,7 +232,9 @@ export function updateMetrics(id, metrics) {
 }
 
 export function duePosts(now = nowIso()) {
-  return all(`SELECT id FROM posts WHERE dealership_id = ? AND status = 'scheduled' AND scheduled_at <= ? ORDER BY scheduled_at`, tenantId(), now).map((r) => r.id);
+  return all(`SELECT id FROM posts WHERE dealership_id = ? AND status = 'scheduled' AND scheduled_at <= ? ORDER BY scheduled_at`, tenantId(), now).map(
+    (r) => r.id,
+  );
 }
 
 /** Dealerships that have posts due, for the worker. */

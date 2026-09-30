@@ -2,10 +2,12 @@ import assert from 'node:assert/strict';
 import { tenantTest as test } from './helpers.js';
 import { importVehiclesCsv, listVehicles, parseCsv, updateVehicle, nextPriceDrop, nextVehicleToFeature, markVehiclePosted } from '../src/services/inventory.js';
 
-
 test('parseCsv handles quotes, escaped quotes and CRLF', (fixtures) => {
   const rows = parseCsv('a,b,c\r\n"1,5","say ""hi""",x\r\n');
-  assert.deepEqual(rows, [['a', 'b', 'c'], ['1,5', 'say "hi"', 'x']]);
+  assert.deepEqual(rows, [
+    ['a', 'b', 'c'],
+    ['1,5', 'say "hi"', 'x'],
+  ]);
 });
 
 test('CSV import maps common DMS headers and updates existing vehicles by VIN', (fixtures) => {

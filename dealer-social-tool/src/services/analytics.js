@@ -47,6 +47,14 @@ export function analyticsSummary(days = 30) {
     by_platform: Object.entries(byPlatform).map(([platform, t]) => ({ platform, label: PLATFORMS[platform]?.label, ...withRates(t) })),
     by_type: Object.entries(byType).map(([type, t]) => ({ type, label: POST_TYPES[type], ...withRates(t) })),
     series,
-    top_posts: top.map((p) => ({ id: p.id, platform: p.platform, post_type: p.post_type, title: p.title, content: p.content.slice(0, 160), metrics: p.metrics, external_url: p.external_url })),
+    top_posts: top.map((p) => ({
+      id: p.id,
+      platform: p.platform,
+      post_type: p.post_type,
+      title: p.title,
+      content: p.content.slice(0, 160),
+      metrics: p.metrics,
+      external_url: p.external_url,
+    })),
   };
 }
