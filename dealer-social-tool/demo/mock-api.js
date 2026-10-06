@@ -1,7 +1,13 @@
 // In-browser stand-in for the Dealer Social server, so the real dashboard can be tried with
 // sample data and no account. It answers the same /api routes; nothing leaves the browser.
 (function () {
-  const STORE_KEY = 'dealer-social-demo-v1';
+  const STORE_KEY = 'dealer-social-demo-v2';
+  // Same goals, fields and template copy as the real server.
+  let OBJ = null;
+  const objectivesReady = import('./shared/objectives.js').then((m) => {
+    OBJ = m;
+    for (const o of m.OBJECTIVE_LIST) POST_TYPES[o.key] = `${o.condition === 'new' ? 'New' : 'Used'} · ${o.label}`;
+  });
   const DAY = 86_400_000;
 
   const PLATFORMS = {
@@ -267,7 +273,7 @@
   }
   const BASE = { facebook: 900, instagram: 1400, tiktok: 3000, x: 500, linkedin: 350, google_business: 600 };
   function metrics(p) {
-    if (p.status !== 'published') return {};
+    if (p.status !== 'published' || !p.external_id) return {}; // posted by hand: no numbers to show
     const hours = Math.max(0, (now() - new Date(p.published_at).getTime()) / 3600_000);
     const growth = 0.08 + 0.92 * (1 - Math.exp(-hours / 18));
     const r = seeded(p.id);
@@ -331,7 +337,8 @@
     for (const p of state.posts) if (p.status === 'scheduled' && p.scheduled_at <= iso(now())) publish(p, 'scheduler');
   }
 
-  function generate({ post_type, platforms = [], vehicle_id, instructions = '', scheduled_at, actor = 'user' }) {
+  function generate({ post_type, platforms = [], vehicle_id, instructions = '', scheduled_at, actor = 'user', details, media }) {
+    if (OBJ?.OBJECTIVE_BY_KEY[post_type]) return generateObjective({ post_type, platforms, vehicle_id, details, media });
     if (!POST_TYPES[post_type]) throw err(400, 'Unknown post type');
     const wanted = [...new Set(platforms)].filter((x) => PLATFORMS[x]);
     if (!wanted.length) throw err(400, 'Pick at least one platform');
@@ -353,6 +360,33 @@
       if (post_type === 'sold_celebration') vehicle.sold_celebrated = 1;
     }
     log(actor, 'content.generated', `${posts.length} ${post_type} post(s)${vehicle ? ` for ${title(vehicle)}` : ''}`);
+    return { engine: 'claude', batch_id: batch, posts: posts.map(present) };
+  }
+
+  function generateObjective({ post_type, platforms, vehicle_id, details = {}, media }) {
+    const objective = OBJ.OBJECTIVE_BY_KEY[post_type];
+    const wanted = [...new Set(platforms)].filter((x) => PLATFORMS[x]);
+    const vehicle = vehicle_id ? state.vehicles.find((v) => v.id === Number(vehicle_id)) : null;
+    const fromVehicle = {};
+    if (vehicle) for (const k of ['year', 'make', 'model', 'trim', 'mileage', 'price', 'previous_price', 'stock_number', 'exterior_color', 'features']) if (vehicle[k] != null && vehicle[k] !== '') fromVehicle[k] = String(vehicle[k]);
+    const facts = { ...fromVehicle, ...Object.fromEntries(Object.entries(details || {}).filter(([, v]) => String(v ?? '').trim())) };
+    const missing = OBJ.missingFields(post_type, facts);
+    if (missing.length) throw err(400, `Please add: ${missing.join(', ')}`);
+    state.usage.ai_posts += wanted.length;
+    const batch = `b${++state.seq}`;
+    const photos = Array.isArray(media) && media.length ? media : vehicle ? vehicle.photos.slice(0, 4) : [];
+    const posts = wanted.map((platform) => {
+      const copy = OBJ.writeObjectivePost({ objectiveKey: post_type, details: facts, dealer: state.dealership, platform, rules: PLATFORMS[platform] });
+      const p = {
+        id: ++state.seq, platform, post_type, ...copy, media: photos, vehicle_id: vehicle ? vehicle.id : null, status: 'draft', source: 'ai', batch_id: batch,
+        scheduled_at: null, published_at: null, external_id: null, external_url: null, error: null, metrics: {},
+        brief: { condition: objective.condition, objective: post_type, details: facts }, created_at: iso(now()), updated_at: iso(now()),
+      };
+      state.posts.push(p);
+      return p;
+    });
+    if (vehicle) vehicle.last_posted_at = iso(now());
+    log('user', 'content.generated', `${posts.length} ${post_type} post(s) for ${OBJ.vehicleName(facts) || 'a vehicle'}`);
     return { engine: 'claude', batch_id: batch, posts: posts.map(present) };
   }
 
@@ -539,6 +573,8 @@
     if (a === 'auth') return { ok: true };
     if (a === 'meta')
       return { ai_enabled: true, ai_model: 'demo mode', platforms: PLATFORMS, post_types: POST_TYPES, post_statuses: STATUSES,
+        general_post_types: ['promotion', 'event', 'service_tip', 'review_highlight', 'holiday', 'engagement', 'team_spotlight', 'custom'],
+        objectives: OBJ.OBJECTIVES, fields: OBJ.FIELDS,
         oauth: { meta: { label: 'Facebook & Instagram', platforms: ['facebook', 'instagram'], configured: true }, google: { label: 'Google Business Profile', platforms: ['google_business'], configured: true }, linkedin: { label: 'LinkedIn', platforms: ['linkedin'], configured: true }, x: { label: 'X (Twitter)', platforms: ['x'], configured: true }, tiktok: { label: 'TikTok', platforms: ['tiktok'], configured: true } },
         billing_enabled: true, plans: PLANS, role: 'owner', user: me().user, product_name: 'Dealer Social', support_email: 'support@example.com' };
     if (a === 'dashboard') {
@@ -678,6 +714,10 @@
       }
       if (locked) throw err(409, `Post is already ${p.status}`);
       if (c === 'submit') p.status = 'pending_approval';
+      if (c === 'mark-posted') {
+        Object.assign(p, { status: 'published', published_at: iso(now()), external_id: null, external_url: body?.url || null, error: null });
+        log('user', 'post.posted_manually', `#${p.id} on ${PLATFORMS[p.platform].label}`);
+      }
       if (c === 'approve') {
         p.status = p.scheduled_at ? 'scheduled' : 'approved';
         p.error = null;
@@ -698,6 +738,15 @@
       return present(p);
     }
     if (a === 'generate') return generate(body || {});
+    if (a === 'media') {
+      // Keep the (already resized) photo in the browser as a data URL.
+      if (!(body instanceof Blob)) throw err(400, 'Upload a JPG, PNG or WebP photo');
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ url: reader.result });
+        reader.readAsDataURL(body);
+      });
+    }
     if (a === 'chat') {
       if (method === 'GET') return state.chats[b] || [];
       const id = body.conversation_id || `c${++state.seq}`;
@@ -792,7 +841,8 @@
     if (typeof body === 'string' && (init.headers?.['content-type'] || '').includes('json')) body = JSON.parse(body);
     await new Promise((r) => setTimeout(r, path.includes('/chat') || path.includes('/generate') ? 700 : 60));
     try {
-      const data = route(method, path, Object.fromEntries(url.searchParams), body);
+      await objectivesReady;
+      const data = await route(method, path, Object.fromEntries(url.searchParams), body);
       save();
       if (data === null) return new Response(null, { status: 204 });
       return new Response(JSON.stringify(data), { status: method === 'POST' && ['generate', 'posts', 'accounts', 'vehicles'].includes(path.split('/')[2]) && path.split('/').length === 3 ? 201 : 200, headers: { 'content-type': 'application/json' } });
