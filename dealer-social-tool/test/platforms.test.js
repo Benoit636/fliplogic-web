@@ -24,7 +24,8 @@ beforeEach(() => {
   calls = [];
   replies = [];
   globalThis.fetch = async (url, init = {}) => {
-    const body = init.body && (init.headers?.['content-type'] === 'application/json' ? JSON.parse(init.body) : Object.fromEntries(new URLSearchParams(init.body)));
+    const body =
+      init.body && (init.headers?.['content-type'] === 'application/json' ? JSON.parse(init.body) : Object.fromEntries(new URLSearchParams(init.body)));
     calls.push({ url: String(url), method: init.method || 'GET', headers: init.headers || {}, body });
     const next = replies.shift() || { body: {} };
     return new Response(JSON.stringify(next.body), { status: next.status || 200, headers: { 'content-type': 'application/json', ...(next.headers || {}) } });
@@ -86,7 +87,11 @@ test('LinkedIn: versioned Posts API with escaped commentary and hashtags', async
 
 test('Google Business Profile: local post with photo and website button', async () => {
   replies.push({ body: { name: 'accounts/1/locations/2/localPosts/3', searchUrl: 'https://g.page/x' } });
-  await googleAdapter.publish(post({ media: ['https://img/1.jpg'], link_url: 'https://dealer.example' }), account({ external_id: 'accounts/1/locations/2' }), 'Update');
+  await googleAdapter.publish(
+    post({ media: ['https://img/1.jpg'], link_url: 'https://dealer.example' }),
+    account({ external_id: 'accounts/1/locations/2' }),
+    'Update',
+  );
   assert.equal(calls[0].url, 'https://mybusiness.googleapis.com/v4/accounts/1/locations/2/localPosts');
   assert.equal(calls[0].body.topicType, 'STANDARD');
   assert.deepEqual(calls[0].body.media, [{ mediaFormat: 'PHOTO', sourceUrl: 'https://img/1.jpg' }]);
@@ -97,13 +102,22 @@ test('Google reviews become inbox items (only unanswered ones)', async () => {
   replies.push({
     body: {
       reviews: [
-        { name: 'accounts/1/locations/2/reviews/a', reviewer: { displayName: 'Ann' }, starRating: 'FIVE', comment: 'Great!', createTime: '2026-09-01T00:00:00Z' },
+        {
+          name: 'accounts/1/locations/2/reviews/a',
+          reviewer: { displayName: 'Ann' },
+          starRating: 'FIVE',
+          comment: 'Great!',
+          createTime: '2026-09-01T00:00:00Z',
+        },
         { name: 'accounts/1/locations/2/reviews/b', starRating: 'ONE', reviewReply: { comment: 'Sorry' } },
       ],
     },
   });
   const reviews = await googleAdapter.fetchReviews(account({ external_id: 'accounts/1/locations/2' }));
-  assert.deepEqual(reviews.map((r) => [r.author, r.rating]), [['Ann', 5]]);
+  assert.deepEqual(
+    reviews.map((r) => [r.author, r.rating]),
+    [['Ann', 5]],
+  );
 });
 
 test('TikTok: photo carousel direct post, video when the URL is an mp4', async () => {
@@ -167,7 +181,10 @@ tenantTest('OAuth connect: start → callback → pick pages → live accounts',
   assert.match(decodeURIComponent(url), /\/oauth\/fake\/callback/);
   await oauth.completeOAuth('fake', state, 'CODE');
   const options = oauth.pendingOptions(state);
-  assert.deepEqual(options.map((o) => o.display_name), ['Page (CODE)', '@page']);
+  assert.deepEqual(
+    options.map((o) => o.display_name),
+    ['Page (CODE)', '@page'],
+  );
   assert.equal(JSON.stringify(options).includes('page-token'), false, 'tokens never reach the browser');
   const before = listAccounts().length;
   oauth.connectOptions(state, [0]);

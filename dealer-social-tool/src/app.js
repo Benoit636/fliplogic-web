@@ -154,6 +154,9 @@ export function createApp() {
   app.get('/app', (req, res) => (req.session ? res.sendFile(path.join(publicDir, 'app.html')) : res.redirect('/login')));
   app.get('/admin', (req, res) => (req.session?.user?.is_superadmin ? res.sendFile(path.join(publicDir, 'admin.html')) : res.redirect('/login')));
   app.use(express.static(publicDir, { index: false }));
+  // Uploaded vehicle photos (public so social networks can fetch them; file names are unguessable).
+  app.use('/media', express.static(config.mediaDir, { index: false, maxAge: '30d', fallthrough: false }));
+  app.use('/shared', express.static(path.join(here, 'shared'), { index: false }));
 
   app.use((err, req, res, _next) => {
     let status = err.status || 500;

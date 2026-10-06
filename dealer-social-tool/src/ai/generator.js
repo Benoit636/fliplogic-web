@@ -1,10 +1,11 @@
 import { z } from 'zod';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
-import { PLATFORM_KEYS, POST_TYPE_KEYS, VEHICLE_POST_TYPES } from '../config.js';
+import { PLATFORMS, PLATFORM_KEYS, POST_TYPE_KEYS, VEHICLE_POST_TYPES } from '../config.js';
 import { getDealership } from '../services/dealership.js';
 import { aiEnabled, getClient, baseParams, assertNotRefused } from './client.js';
-import { COPYWRITER_RULES, dealershipBrief, postRequest } from './prompts.js';
+import { COPYWRITER_RULES, dealershipBrief, postRequest, objectiveRequest } from './prompts.js';
 import { fallbackPost } from './fallback.js';
+import { OBJECTIVE_BY_KEY, missingFields, writeObjectivePost } from '../shared/objectives.js';
 
 const PostVariants = z.object({
   variants: z.array(
@@ -18,14 +19,32 @@ const PostVariants = z.object({
   ),
 });
 
+/** Vehicle record → objective details, so inventory vehicles can prefill a New/Used post. */
+export function detailsFromVehicle(v) {
+  if (!v) return {};
+  const out = {};
+  for (const k of ['year', 'make', 'model', 'trim', 'mileage', 'price', 'previous_price', 'stock_number', 'exterior_color', 'features']) {
+    if (v[k] != null && v[k] !== '') out[k] = String(v[k]);
+  }
+  return out;
+}
+
 /**
  * Write platform-tailored copy for one post idea.
+ * Objective posts (the New/Used Create Post flow) are written from `details`;
+ * older post types from an inventory `vehicle`.
  * Returns one variant per requested platform plus which engine wrote it.
  */
-export async function generatePostVariants({ postType, vehicle = null, platforms, instructions = '' }) {
+export async function generatePostVariants({ postType, vehicle = null, details = null, platforms, instructions = '' }) {
+  const objective = OBJECTIVE_BY_KEY[postType];
   if (!POST_TYPE_KEYS.includes(postType)) throw Object.assign(new Error(`Unknown post type ${postType}`), { status: 400 });
   const wanted = [...new Set(platforms)].filter((p) => PLATFORM_KEYS.includes(p));
   if (!wanted.length) throw Object.assign(new Error('Pick at least one platform'), { status: 400 });
+  const facts = objective ? { ...detailsFromVehicle(vehicle), ...stripEmpty(details) } : null;
+  if (objective) {
+    const missing = missingFields(postType, facts);
+    if (missing.length) throw Object.assign(new Error(`Please add: ${missing.join(', ')}`), { status: 400 });
+  }
   if (VEHICLE_POST_TYPES.includes(postType) && !vehicle) {
     throw Object.assign(new Error('Pick a vehicle for this type of post'), { status: 400 });
   }
@@ -41,7 +60,14 @@ export async function generatePostVariants({ postType, vehicle = null, platforms
         { type: 'text', text: COPYWRITER_RULES },
         { type: 'text', text: dealershipBrief(dealer), cache_control: { type: 'ephemeral' } },
       ],
-      messages: [{ role: 'user', content: postRequest({ postType, vehicle, platforms: wanted, instructions, unit: dealer.distance_unit }) }],
+      messages: [
+        {
+          role: 'user',
+          content: objective
+            ? objectiveRequest({ objective, details: facts, platforms: wanted, unit: dealer.distance_unit, instructions })
+            : postRequest({ postType, vehicle, platforms: wanted, instructions, unit: dealer.distance_unit }),
+        },
+      ],
       output_config: { ...baseParams('low').output_config, format: betaZodOutputFormat(PostVariants) },
     });
     assertNotRefused(response);
@@ -52,11 +78,24 @@ export async function generatePostVariants({ postType, vehicle = null, platforms
   const byPlatform = new Map(variants.filter((v) => wanted.includes(v.platform)).map((v) => [v.platform, v]));
   return {
     engine,
+    details: facts,
     variants: wanted.map((platform) => {
-      const v = byPlatform.get(platform) || fallbackPost({ postType, vehicle, platform, instructions, dealer });
-      return { ...v, hashtags: v.hashtags.map((t) => (t.startsWith('#') ? t : `#${t}`)) };
+      const v =
+        byPlatform.get(platform) ||
+        (objective
+          ? writeObjectivePost({ objectiveKey: postType, details: facts, dealer, platform, rules: PLATFORMS[platform] })
+          : fallbackPost({ postType, vehicle, platform, instructions, dealer }));
+      return { ...v, platform, hashtags: v.hashtags.map((t) => (t.startsWith('#') ? t : `#${t}`)) };
     }),
   };
+}
+
+function stripEmpty(obj) {
+  return Object.fromEntries(
+    Object.entries(obj || {})
+      .filter(([, v]) => v != null && String(v).trim() !== '')
+      .map(([k, v]) => [k, String(v).trim()]),
+  );
 }
 
 const RewriteSchema = z.object({ content: z.string(), hashtags: z.array(z.string()) });

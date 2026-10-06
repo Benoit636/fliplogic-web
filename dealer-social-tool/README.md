@@ -1,9 +1,10 @@
 # Dealer Social
 
-**An AI social media manager for car dealerships, sold as a monthly subscription.**
+**Organic social media posts for car dealerships, from idea to finished post in under two minutes.**
 
-Each dealership signs up, connects its social pages and inventory, and the AI bot writes, schedules and
-publishes posts. It also triages comments, DMs and Google reviews and reports on results. You (the platform
+A sales manager or GM picks **New** or **Used**, picks what the post should achieve, types (or picks) the
+vehicle and offer, adds photos from their phone, and gets a finished post for Facebook, Instagram and
+LinkedIn to review, edit and publish. It's sold as a monthly subscription per dealership; you (the platform
 owner) see every customer, your revenue and usage in an admin console. Stripe handles billing.
 
 > This is a standalone product. It is not related to Fliplogic or Algo+ and shares no code with them.
@@ -11,12 +12,34 @@ owner) see every customer, your revenue and usage in an admin console. Stripe ha
 - **Business model, pricing and go-to-market:** [`docs/BUSINESS_PLAN.md`](docs/BUSINESS_PLAN.md)
 - **Step-by-step launch checklist (accounts to create, keys to paste):** [`docs/LAUNCH_CHECKLIST.md`](docs/LAUNCH_CHECKLIST.md)
 
+## Create Post: the core workflow
+
+`Create Post` is the home screen. Five steps, all on one phone-friendly screen:
+
+1. **New vehicles** or **Used vehicles**.
+2. **Goal.** Used: Fresh Arrival, Featured Vehicle, Price Drop, Needs to Move, Manager Special, Trade-In Spotlight.
+   New: New Arrival, Monthly Offer, Model Spotlight, Demo Special, Leftover Inventory, Trade-Up Event, Manager Special.
+3. **Details.** Only the fields that goal needs (year, make, model, price, payment, finance/lease offer,
+   offer end date, selling points…). Only make and model are required. Pick from inventory to prefill, and add photos
+   (they're resized on the phone before upload).
+4. **Review.** The AI writes a hook, a short description, the key selling points, a call to action and hashtags,
+   with one version per network, written differently for each goal. Everything is editable. Not happy? *Try another version*.
+5. **Post.** Publish now or schedule to **connected** accounts. Accounts that aren't connected get a
+   ready-to-copy post with *Copy text*, *Share…* (on phones), *Save photo* and *I posted it*. Staff send posts to a
+   manager for approval instead.
+
+The objectives, their fields and the template copy live in one file, [`src/shared/objectives.js`](src/shared/objectives.js),
+shared by the server and the browser. Without an AI key, the same objectives produce template copy.
+
+Everything else (calendar, inbox, inventory, AI assistant, autopilot, analytics, team, billing) is still
+there, under **More tools**.
+
 ## What's in the product
 
 | For dealerships | For you (the platform owner) |
 | --- | --- |
 | 🤖 AI assistant that plans, writes, schedules, publishes and reports | 🌐 Marketing site with pricing at `/` |
-| ✍️ Content studio: one idea, one post per network | 🧾 Self-serve signup with a 14-day free trial (no card needed) |
+| ✍️ Create Post: New/Used → goal → details & photos → AI post per network → publish, schedule or copy | 🧾 Self-serve signup with a 14-day free trial (no card needed) |
 | ✅ Approval queue, or full autopilot | 💳 Stripe Checkout, Customer Portal, signed webhooks and proration |
 | 📅 Calendar and recurring autopilot rules, on the dealer's own time zone | 📊 `/admin`: MRR, ARR, trials, past-due accounts, usage per dealership |
 | 💬 Inbox triage for comments, DMs and Google reviews, with lead detection and suggested replies | 🎁 Comp plans, extend trials, open any dealership for support |
@@ -36,7 +59,7 @@ owner) see every customer, your revenue and usage in an admin console. Stripe ha
 | X | ✅ OAuth 2.0 (PKCE) | ✅ text | ✅ | — (reading replies needs a paid X API tier) |
 | TikTok | ✅ TikTok Login | ✅ photo carousel or video | — | — |
 
-Every network also has a **simulated** mode. It runs the whole workflow without posting anything, which is useful for demos and trials.
+Every network also has a **practice** mode (called *simulated* in the code) for training and demos. Create Post never treats a practice account as connected: it only publishes to real, connected accounts, and gives you copy-and-post instructions for everything else.
 A **Connect** button only turns on once you add that network's app keys to `.env`. See the launch checklist.
 
 ### Plans (edit in `src/plans.js`)

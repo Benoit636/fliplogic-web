@@ -7,6 +7,7 @@ import { accountForPlatform, recordAccountError } from './accounts.js';
 import { composeText, duePosts, getPost, markFailed, markPublished, markPublishing, updateMetrics, validatePost } from './posts.js';
 import { httpError } from './errors.js';
 import { tenantId } from '../tenant.js';
+import { absoluteMediaUrl } from './media.js';
 
 export async function publishPost(id, actor = 'system') {
   const post = getPost(id);
@@ -22,7 +23,8 @@ export async function publishPost(id, actor = 'system') {
     if (!account) throw new Error(`No ${PLATFORMS[post.platform].label} account connected`);
     try {
       account = await ensureFreshToken(account);
-      const result = await adapterFor(account).publish({ ...post, link_url: getDealership().website }, account, composeText(post));
+      const outgoing = { ...post, media: post.media.map(absoluteMediaUrl), link_url: getDealership().website };
+      const result = await adapterFor(account).publish(outgoing, account, composeText(post));
       markPublished(id, result);
       if (account.last_error) recordAccountError(account.id, null);
     } catch (err) {
@@ -54,6 +56,7 @@ export async function refreshMetrics() {
   let updated = 0;
   for (const { id } of rows) {
     const post = getPost(id);
+    if (!post.external_id) continue; // posted by hand: we have no way to read its numbers
     try {
       const account = await ensureFreshToken(accountForPlatform(post.platform));
       const adapter = adapterFor(account);

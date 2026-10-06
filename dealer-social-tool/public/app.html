@@ -18,19 +18,23 @@
           </div>
         </div>
         <nav id="nav">
-          <a href="#/dashboard" data-view="dashboard">📊 Dashboard</a>
-          <a href="#/assistant" data-view="assistant">🤖 AI Assistant</a>
-          <a href="#/studio" data-view="studio">✍️ Content Studio</a>
+          <a href="#/create" data-view="create" class="nav-primary">✍️ Create Post</a>
+          <a href="#/posts" data-view="posts">🗂️ My Posts</a>
           <a href="#/approvals" data-view="approvals">✅ Approvals <span class="count" id="count-approvals"></span></a>
-          <a href="#/calendar" data-view="calendar">📅 Calendar</a>
-          <a href="#/posts" data-view="posts">🗂️ All Posts</a>
-          <a href="#/inbox" data-view="inbox">💬 Inbox <span class="count" id="count-inbox"></span></a>
-          <a href="#/inventory" data-view="inventory">🚙 Inventory</a>
-          <a href="#/autopilot" data-view="autopilot">⚙️ Autopilot</a>
-          <a href="#/analytics" data-view="analytics">📈 Analytics</a>
-          <a href="#/settings" data-view="settings">🏢 Settings</a>
-          <a href="#/team" data-view="team">👥 Team</a>
-          <a href="#/billing" data-view="billing">💳 Billing</a>
+          <a href="#/settings" data-view="settings">🔗 Accounts &amp; Settings</a>
+          <details class="nav-more" id="nav-more">
+            <summary>More tools</summary>
+            <a href="#/dashboard" data-view="dashboard">📊 Overview</a>
+            <a href="#/calendar" data-view="calendar">📅 Calendar</a>
+            <a href="#/studio" data-view="studio">📝 Other posts (events, tips…)</a>
+            <a href="#/inventory" data-view="inventory">🚙 Inventory</a>
+            <a href="#/inbox" data-view="inbox">💬 Inbox <span class="count" id="count-inbox"></span></a>
+            <a href="#/assistant" data-view="assistant">🤖 AI Assistant</a>
+            <a href="#/autopilot" data-view="autopilot">⚙️ Autopilot</a>
+            <a href="#/analytics" data-view="analytics">📈 Analytics</a>
+            <a href="#/team" data-view="team">👥 Team</a>
+            <a href="#/billing" data-view="billing">💳 Plan &amp; Billing</a>
+          </details>
         </nav>
         <div class="ai-status" id="ai-status"></div>
         <div class="user-box" id="user-box"></div>
@@ -38,13 +42,19 @@
       <main>
         <header class="topbar">
           <button class="icon-btn menu-btn" id="menu-btn" aria-label="Menu">☰</button>
-          <h1 id="view-title">Dashboard</h1>
+          <h1 id="view-title">Create Post</h1>
           <div class="topbar-right" id="mode-badge"></div>
         </header>
         <section class="view" style="padding-bottom:0" id="banner-root"></section>
         <section id="view" class="view"></section>
       </main>
     </div>
+    <nav class="tabbar" id="tabbar" aria-label="Main">
+      <a href="#/create" data-view="create"><span>✍️</span>Create</a>
+      <a href="#/posts" data-view="posts"><span>🗂️</span>My Posts</a>
+      <a href="#/settings" data-view="settings"><span>🔗</span>Accounts</a>
+      <button type="button" id="tab-more"><span>☰</span>More</button>
+    </nav>
     <div id="modal-root"></div>
     <div id="toast-root"></div>
     <script type="module" src="app.js"></script>

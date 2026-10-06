@@ -11,6 +11,7 @@ export function presentPost(row) {
     hashtags: parseJson(row.hashtags, []),
     media: parseJson(row.media, []),
     metrics: parseJson(row.metrics, {}),
+    brief: parseJson(row.brief, {}),
   };
   post.warnings = validatePost(post);
   return post;
@@ -102,8 +103,8 @@ export function createPost(input, actor = 'user') {
   const postType = POST_TYPES[input.post_type] ? input.post_type : 'custom';
   const status = input.status && POST_STATUSES.includes(input.status) ? input.status : 'draft';
   const { lastInsertRowid } = run(
-    `INSERT INTO posts (dealership_id, platform, post_type, title, content, hashtags, media, image_idea, vehicle_id, status, source, batch_id, scheduled_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO posts (dealership_id, platform, post_type, title, content, hashtags, media, image_idea, vehicle_id, status, source, batch_id, scheduled_at, brief)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     tenantId(),
     input.platform,
     postType,
@@ -117,6 +118,7 @@ export function createPost(input, actor = 'user') {
     input.source || 'manual',
     input.batch_id || null,
     checkDate(input.scheduled_at),
+    JSON.stringify(input.brief || {}),
   );
   const post = getPost(Number(lastInsertRowid));
   logActivity(actor, 'post.created', `#${post.id} ${PLATFORMS[post.platform].label} ${post.post_type} (${post.status})`);
@@ -221,6 +223,19 @@ export function markPublished(id, { external_id, external_url, metrics }) {
     metrics: JSON.stringify(metrics || {}),
     error: null,
   });
+}
+
+/**
+ * The manager posted it themselves (the network isn't connected to Dealer Social).
+ * No external_id is stored, so no engagement numbers are invented for it.
+ */
+export function markPostedManually(id, { url = '' } = {}, actor = 'user') {
+  const post = requirePost(id);
+  if (LOCKED.includes(post.status)) throw httpError(409, `Post is already ${post.status}`);
+  if (url && !/^https?:\/\//i.test(url)) throw httpError(400, 'Link must start with http(s)://');
+  setStatus(id, 'published', { published_at: nowIso(), external_id: null, external_url: url || null, metrics: '{}', error: null });
+  logActivity(actor, 'post.posted_manually', `#${id} on ${PLATFORMS[post.platform].label}`);
+  return getPost(id);
 }
 
 export function markFailed(id, error) {

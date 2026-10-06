@@ -247,6 +247,10 @@ const MIGRATIONS = [
   ALTER TABLE dealerships ADD COLUMN crm_lead_email TEXT NOT NULL DEFAULT '';
   ALTER TABLE inbox_messages ADD COLUMN forwarded_at TEXT;
   `,
+  // 3: Create Post flow: keep what the manager entered (New/Used, objective, vehicle/offer details)
+  `
+  ALTER TABLE posts ADD COLUMN brief TEXT NOT NULL DEFAULT '{}';
+  `,
 ];
 
 let db;

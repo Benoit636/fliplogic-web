@@ -178,6 +178,8 @@ async function openPostEditor(id, onChange = () => {}) {
       ${
         !locked
           ? `<button class="danger" id="pe-delete">Delete</button><span class="spacer"></span>
+      <button id="pe-copy">📋 Copy text</button>
+      <button id="pe-posted" title="Use this when you posted it yourself">✔ I posted it</button>
       <button id="pe-save">Save</button>
       <button id="pe-schedule" class="primary">Approve & schedule</button>
       <button id="pe-publish" class="good">Publish now</button>`
@@ -210,6 +212,26 @@ async function openPostEditor(id, onChange = () => {}) {
     onChange();
   };
   $('#pe-save', el).onclick = (e) => act(e.target, () => api('PATCH', `/posts/${id}`, payload()), 'Saved').then((r) => r && done());
+  $('#pe-copy', el).onclick = async () => {
+    const text = composeClient({ content: content.value, hashtags: tags.value.split(/\s+/).filter(Boolean) });
+    try {
+      await navigator.clipboard.writeText(text);
+      toast('Copied. Paste it into the app.');
+    } catch {
+      content.focus();
+      content.select();
+      toast('Text selected. Press copy on your keyboard.');
+    }
+  };
+  $('#pe-posted', el).onclick = (e) =>
+    act(
+      e.target,
+      async () => {
+        await api('PATCH', `/posts/${id}`, payload());
+        return api('POST', `/posts/${id}/mark-posted`);
+      },
+      'Marked as posted',
+    ).then((r) => r && done());
   $('#pe-schedule', el).onclick = (e) =>
     act(
       e.target,
@@ -279,7 +301,7 @@ views.dashboard = async () => {
     ['profile', 'Fill in your dealership profile & brand voice', '#/settings'],
     ['accounts', 'Connect your social accounts', '#/settings'],
     ['inventory', 'Add your inventory (CSV or feed)', '#/inventory'],
-    ['first_post', 'Publish your first post', '#/studio'],
+    ['first_post', 'Publish your first post', '#/create'],
     ['autopilot', 'Turn on an autopilot rule', '#/autopilot'],
   ];
   const done = steps.filter(([k]) => d.checklist[k]).length;
@@ -299,7 +321,7 @@ views.dashboard = async () => {
       <div class="kpi"><div class="label">Inventory</div><div class="value">${inv.available || 0}</div><div class="sub">available · ${inv.sold || 0} sold</div></div>
     </div>
     <div class="grid cols-2">
-      <div class="card"><div class="card-head"><h2>Coming up</h2><div class="actions"><a class="btn small" href="#/studio">+ New post</a></div></div>
+      <div class="card"><div class="card-head"><h2>Coming up</h2><div class="actions"><a class="btn small" href="#/create">+ Create post</a></div></div>
         ${d.upcoming.length ? d.upcoming.map((p) => `<div class="list-item"><div>${pIcon(p.platform)}</div><div class="grow"><div class="clip">${esc(p.content.split('\n')[0])}</div><div class="small muted">${fmtDate(p.scheduled_at)} · ${esc(typeLabel(p.post_type))}</div></div><button class="small" data-edit="${p.id}">Open</button></div>`).join('') : '<div class="empty">Nothing scheduled. Ask the <a href="#/assistant">AI assistant</a> to plan your week.</div>'}
       </div>
       <div class="card"><div class="card-head"><h2>Waiting for you</h2></div>
@@ -319,7 +341,7 @@ views.dashboard = async () => {
         }
       </div>
       <div class="card"><div class="card-head"><h2>Connected accounts</h2><div class="actions"><a class="btn small" href="#/settings">Manage</a></div></div>
-        ${d.accounts.length ? d.accounts.map((a) => `<div class="list-item"><div>${pIcon(a.platform)}</div><div class="grow">${esc(a.display_name)}<div class="small muted">${esc(platformLabel(a.platform))}</div></div><span class="badge ${a.mode === 'live' ? 'good' : ''}">${a.mode}</span>${a.enabled ? '' : '<span class="badge bad">off</span>'}</div>`).join('') : '<div class="empty">No accounts connected</div>'}
+        ${d.accounts.length ? d.accounts.map((a) => `<div class="list-item"><div>${pIcon(a.platform)}</div><div class="grow">${esc(a.display_name)}<div class="small muted">${esc(platformLabel(a.platform))}</div></div><span class="badge ${a.mode === 'live' ? 'good' : ''}">${a.mode === 'live' ? 'Connected' : 'Practice'}</span>${a.enabled ? '' : '<span class="badge bad">off</span>'}</div>`).join('') : '<div class="empty">No accounts connected</div>'}
       </div>
     </div>`;
   view.onclick = (e) => {
@@ -417,18 +439,23 @@ views.assistant = async () => {
 };
 
 views.studio = async () => {
-  const [vehicles, accounts] = await Promise.all([api('GET', '/vehicles?status=available'), api('GET', '/accounts')]);
+  const [vehicles, accounts] = await Promise.all([api('GET', '/vehicles'), api('GET', '/accounts')]);
   const params = new URLSearchParams(location.hash.split('?')[1] || '');
   const connected = [...new Set(accounts.filter((a) => a.enabled).map((a) => a.platform))];
+  // New and used vehicle posts live in Create Post; this screen covers everything else.
+  const vehicleMode = params.has('vehicle');
+  const types = vehicleMode ? ['sold_celebration', 'vehicle_spotlight', 'price_drop'] : state.meta.general_post_types;
+  const options = types.map((k) => `<option value="${k}" ${k === params.get('type') ? 'selected' : ''}>${esc(typeLabel(k))}</option>`).join('');
   view.innerHTML = `<div class="grid cols-2" style="align-items:start">
     <form class="card stack" id="studio-form">
-      <h2>What do you want to post?</h2>
-      <label class="field"><span>Post type</span><select name="post_type">${typeOptions(params.get('type') || 'vehicle_spotlight')}</select></label>
-      <label class="field"><span>Vehicle (for vehicle posts)</span><select name="vehicle_id"><option value="">— none —</option>${vehicles.map((v) => `<option value="${v.id}" ${String(v.id) === params.get('vehicle') ? 'selected' : ''}>${esc([v.year, v.make, v.model, v.trim].join(' '))} · ${money(v.price)}</option>`).join('')}</select></label>
+      <h2>${vehicleMode ? 'Vehicle post' : 'Events, service tips, reviews and more'}</h2>
+      ${vehicleMode ? '' : '<p class="small muted">For new or used vehicle posts, use <a href="#/create">Create Post</a>.</p>'}
+      <label class="field"><span>Post type</span><select name="post_type">${options}</select></label>
+      ${vehicleMode ? `<label class="field"><span>Vehicle</span><select name="vehicle_id">${vehicles.map((v) => `<option value="${v.id}" ${String(v.id) === params.get('vehicle') ? 'selected' : ''}>${esc([v.year, v.make, v.model, v.trim].join(' '))}</option>`).join('')}</select></label>` : ''}
       <div class="field"><span class="small muted">Platforms</span>${platformChecks('platforms', connected.length ? connected : ['facebook', 'instagram'])}</div>
       <label class="field"><span>Details for the AI (offer, event date, angle, tone…)</span><textarea name="instructions" placeholder="e.g. Mention our 0% financing event this weekend, playful tone"></textarea></label>
       <label class="field"><span>Schedule for (optional)</span><input type="datetime-local" name="when"></label>
-      <div class="row"><button class="primary" id="studio-go">✨ Generate posts</button><span class="muted small">${state.meta.ai_enabled ? `Written by Claude (${esc(state.meta.ai_model)})` : 'Using templates — add a Claude API key for AI writing'}</span></div>
+      <div class="row"><button class="primary" id="studio-go">✨ Create posts</button></div>
     </form>
     <div class="card"><div class="card-head"><h2>Preview</h2><div class="actions" id="studio-actions"></div></div><div id="studio-out" class="post-grid"><div class="empty" style="grid-column:1/-1">Your posts will appear here, one per platform. Edit anything before approving.</div></div></div>
   </div>`;
@@ -506,7 +533,7 @@ views.calendar = async () => {
   }
   view.innerHTML = `<div class="card">
     <div class="card-head"><a class="btn small" href="#/calendar?m=${monthKey(prev)}">←</a><h2>${first.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</h2><a class="btn small" href="#/calendar?m=${monthKey(next)}">→</a>
-      <div class="actions"><span class="badge info">Scheduled</span><span class="badge warn">Needs approval</span><span class="badge good">Published</span><span class="badge bad">Failed</span><a class="btn small" href="#/studio">+ New post</a></div></div>
+      <div class="actions"><span class="badge info">Scheduled</span><span class="badge warn">Needs approval</span><span class="badge good">Published</span><span class="badge bad">Failed</span><a class="btn small" href="#/create">+ Create post</a></div></div>
     <div class="cal">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => `<div class="cal-head">${d}</div>`).join('')}${cells}</div></div>`;
   view.onclick = (e) => {
     const el = e.target.closest('[data-edit]');
@@ -667,7 +694,7 @@ views.inventory = async () => {
       <td>${esc(v.condition)}</td><td class="num">${money(v.price)}${v.previous_price > v.price ? `<div class="small" style="color:var(--good)">↓ from ${money(v.previous_price)}</div>` : ''}</td><td class="num">${num(v.mileage)}</td>
       <td><span class="badge ${v.status === 'available' ? 'good' : v.status === 'sold' ? 'info' : 'warn'}">${v.status}</span></td>
       <td class="small">${v.last_posted_at ? ago(v.last_posted_at) : '<span class="badge warn">never</span>'}</td>
-      <td><div class="row" style="flex-wrap:nowrap"><a class="btn small" href="#/studio?vehicle=${v.id}&type=${v.status === 'sold' ? 'sold_celebration' : v.last_posted_at ? 'vehicle_spotlight' : 'new_arrival'}">✨ Post</a><button class="small" data-vedit="${v.id}">Edit</button><button class="small danger" data-vdel="${v.id}">✕</button></div></td></tr>`,
+      <td><div class="row" style="flex-wrap:nowrap"><a class="btn small" href="${v.status === 'sold' ? `#/studio?vehicle=${v.id}&type=sold_celebration` : `#/create?vehicle=${v.id}`}">✨ Create post</a><button class="small" data-vedit="${v.id}">Edit</button><button class="small danger" data-vdel="${v.id}">✕</button></div></td></tr>`,
         )
         .join('') ||
       '<tr><td colspan="8"><div class="empty">No vehicles yet. Add one or import a CSV export from your DMS (columns like Stock, VIN, Year, Make, Model, Trim, Price, Mileage, Color, Features, Photos).</div></td></tr>'
@@ -906,16 +933,16 @@ views.settings = async () => {
         ${d.feed_last_synced_at ? `<div class="full small muted">Last feed sync ${ago(d.feed_last_synced_at)}: ${esc(d.feed_last_result)}</div>` : ''}
         <div class="full row"><span class="spacer"></span><button class="primary">Save profile</button></div>
       </div></form>
-    <div class="card"><div class="card-head"><h2>Social accounts</h2><div class="actions"><button class="small" id="acct-add">+ Add manually</button></div></div>
+    <div class="card"><div class="card-head"><h2>Connected accounts</h2><div class="actions"><button class="small" id="acct-add">Advanced: add manually</button></div></div>
       <div class="row" style="margin-bottom:10px">${Object.entries(state.meta.oauth)
         .map(
           ([k, o]) =>
             `<button class="${o.configured ? 'primary' : ''} small" data-oauth="${k}" ${o.configured ? '' : 'disabled title="Not configured on this server yet"'}>🔗 Connect ${esc(o.label)}</button>`,
         )
         .join('')}</div>
-      <p class="small muted">Use the Connect buttons to link your real pages in one click. <strong>Simulated</strong> accounts let you try the full workflow without posting anything.</p>
+      <p class="small muted">Connect your pages once and Create Post can publish to them directly. Until a page is connected, you get ready-to-copy posts instead. <strong>Practice</strong> accounts are for training only: nothing is really posted.</p>
       <div class="table-wrap"><table><tr><th>Platform</th><th>Name</th><th>Mode</th><th>Token</th><th>On</th><th></th></tr>
-      ${accounts.map((a) => `<tr><td>${pIcon(a.platform)} ${esc(platformLabel(a.platform))}</td><td>${esc(a.display_name)}${a.last_error ? `<div class="small" style="color:var(--bad)">⚠️ ${esc(a.last_error)}</div>` : ''}</td><td><span class="badge ${a.mode === 'live' ? 'good' : ''}">${a.mode}</span></td><td class="small muted">${esc(a.token_hint || '—')}</td><td><input type="checkbox" data-aon="${a.id}" ${a.enabled ? 'checked' : ''}></td><td><button class="small" data-aedit="${a.id}">Edit</button> <button class="small danger" data-adel="${a.id}">✕</button></td></tr>`).join('') || '<tr><td colspan="6"><div class="empty">No accounts yet</div></td></tr>'}
+      ${accounts.map((a) => `<tr><td>${pIcon(a.platform)} ${esc(platformLabel(a.platform))}</td><td>${esc(a.display_name)}${a.last_error ? `<div class="small" style="color:var(--bad)">⚠️ ${esc(a.last_error)}</div>` : ''}</td><td><span class="badge ${a.mode === 'live' ? 'good' : ''}">${a.mode === 'live' ? 'Connected' : 'Practice'}</span></td><td class="small muted">${esc(a.token_hint || '—')}</td><td><input type="checkbox" data-aon="${a.id}" ${a.enabled ? 'checked' : ''}></td><td><button class="small" data-aedit="${a.id}">Edit</button> <button class="small danger" data-adel="${a.id}">✕</button></td></tr>`).join('') || '<tr><td colspan="6"><div class="empty">No accounts yet</div></td></tr>'}
       </table></div></div>
     <form class="card" id="pw-form"><div class="card-head"><h2>Your password</h2></div><div class="form-grid">
       <label class="field"><span>Current password</span><input type="password" name="current_password" required autocomplete="current-password"></label>
@@ -952,10 +979,10 @@ views.settings = async () => {
       a ? 'Edit account' : 'Connect account',
       `<form class="stack" id="acct-form">
       <label class="field"><span>Platform</span><select name="platform" ${a ? 'disabled' : ''}>${Object.entries(state.meta.platforms)
-        .map(([k, p]) => `<option value="${k}" ${a?.platform === k ? 'selected' : ''}>${esc(p.label)}${p.live_supported ? '' : ' (simulated only)'}</option>`)
+        .map(([k, p]) => `<option value="${k}" ${a?.platform === k ? 'selected' : ''}>${esc(p.label)}${p.live_supported ? '' : ' (practice only)'}</option>`)
         .join('')}</select></label>
       <label class="field"><span>Display name</span><input name="display_name" required value="${esc(a?.display_name || '')}" placeholder="Riverside Motors"></label>
-      <label class="field"><span>Mode</span><select name="mode"><option value="simulated">Simulated (safe demo)</option><option value="live" ${a?.mode === 'live' ? 'selected' : ''}>Live</option></select></label>
+      <label class="field"><span>Mode</span><select name="mode"><option value="simulated">Practice (nothing is posted)</option><option value="live" ${a?.mode === 'live' ? 'selected' : ''}>Live</option></select></label>
       <label class="field"><span>Page ID / account ID (live)</span><input name="external_id" value="${esc(a?.external_id || '')}"></label>
       <label class="field"><span>Access token (live)${a?.has_token ? ' — leave blank to keep current' : ''}</span><input name="access_token" type="password" autocomplete="off"></label>
       <div class="row"><span class="spacer"></span><button class="primary">Save</button></div></form>`,
@@ -1088,19 +1115,543 @@ views.billing = async () => {
   };
 };
 
+// ---------- Create Post: New/Used → objective → details → review → publish ----------
+// One guided flow built for a busy sales manager on a phone. Kept in `wiz` so leaving the
+// screen (to connect an account, say) and coming back doesn't lose the work.
+
+const CORE_PLATFORMS = ['facebook', 'instagram', 'linkedin'];
+const PLATFORM_HOME = {
+  facebook: 'https://www.facebook.com/',
+  instagram: 'https://www.instagram.com/',
+  linkedin: 'https://www.linkedin.com/feed/',
+  x: 'https://x.com/compose/post',
+  tiktok: 'https://www.tiktok.com/upload',
+  google_business: 'https://business.google.com/',
+};
+const STEPS = ['New or used', 'Goal', 'Details', 'Review & post'];
+let wiz = freshWizard();
+
+function freshWizard() {
+  return { step: 'condition', condition: null, objective: null, details: {}, photos: [], vehicleId: null, posts: [], include: {}, results: null };
+}
+
+const isManager = () => ['owner', 'manager'].includes(state.me?.role);
+const objectiveDef = () => (state.meta.objectives[wiz.condition] || []).find((o) => o.key === wiz.objective);
+const liveAccounts = (accounts) => accounts.filter((a) => a.enabled && a.mode === 'live');
+const composeClient = (p) => {
+  const tags = (p.hashtags || []).filter((t) => !p.content.toLowerCase().includes(t.toLowerCase()));
+  return tags.length ? `${p.content.trim()}\n\n${tags.join(' ')}` : p.content.trim();
+};
+
+function stepper(active) {
+  return `<ol class="stepper" aria-label="Progress">${STEPS.map((s, i) => `<li class="${i < active ? 'done' : i === active ? 'current' : ''}">${s}</li>`).join('')}</ol>`;
+}
+
+async function shrinkPhoto(file) {
+  // Phones produce 4–12 MB photos; 1600px JPEG is plenty for social and uploads fast on LTE.
+  try {
+    const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.86));
+    return blob || file;
+  } catch {
+    return file;
+  }
+}
+
+async function uploadPhoto(file) {
+  const blob = await shrinkPhoto(file);
+  const res = await fetch('/api/media', {
+    method: 'POST',
+    headers: { 'content-type': blob.type || 'image/jpeg', 'x-requested-with': 'fetch' },
+    body: blob,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Photo upload failed');
+  return data.url;
+}
+
+views.create = async (opts) => {
+  // Coming back to Create Post after finishing one starts a new post.
+  if (!opts?.internal && wiz.step === 'done') wiz = freshWizard();
+  // "Create post" from the inventory screen: start with that vehicle filled in.
+  const vehicleParam = new URLSearchParams(location.hash.split('?')[1] || '').get('vehicle');
+  if (vehicleParam) {
+    history.replaceState(null, '', '#/create');
+    const v = await api('GET', `/vehicles/${Number(vehicleParam)}`).catch(() => null);
+    if (v) {
+      const details = {};
+      for (const k of ['year', 'make', 'model', 'trim', 'mileage', 'stock_number', 'exterior_color', 'features'])
+        if (v[k] != null && v[k] !== '') details[k] = String(v[k]);
+      if (v.price != null) details.price = `$${Number(v.price).toLocaleString()}`;
+      if (v.previous_price != null) details.previous_price = `$${Number(v.previous_price).toLocaleString()}`;
+      wiz = { ...freshWizard(), step: 'objective', condition: v.condition === 'new' ? 'new' : 'used', vehicleId: v.id, details, photos: [...(v.photos || [])] };
+    }
+  }
+  if (wiz.step === 'condition') return renderCondition();
+  if (wiz.step === 'objective') return renderObjective();
+  if (wiz.step === 'details') return renderDetails();
+  if (wiz.step === 'review') return renderReview();
+  return renderDone();
+};
+
+const goTo = (step) => {
+  wiz.step = step;
+  view.onclick = view.onchange = view.oninput = null;
+  views.create({ internal: true });
+  window.scrollTo(0, 0);
+};
+
+async function renderCondition() {
+  const [recent, accounts] = await Promise.all([api('GET', '/posts?limit=5'), api('GET', '/accounts')]);
+  const connected = liveAccounts(accounts);
+  view.innerHTML = `<div class="create">
+    <h2 class="create-q">What do you want to post about?</h2>
+    <div class="cond-grid">
+      <button class="cond-card cond-new" data-cond="new"><span class="cond-emoji" aria-hidden="true">✨</span><span class="cond-title">New vehicles</span><span class="cond-sub">Arrivals, monthly offers, demos, leftovers, events</span></button>
+      <button class="cond-card cond-used" data-cond="used"><span class="cond-emoji" aria-hidden="true">🚗</span><span class="cond-title">Used vehicles</span><span class="cond-sub">Fresh arrivals, price drops, specials, trade-ins</span></button>
+    </div>
+    ${
+      connected.length
+        ? `<p class="small muted">Posting to: ${connected.map((a) => `${pIcon(a.platform)} ${esc(a.display_name)}`).join(' · ')}</p>`
+        : `<div class="banner info">🔗 No social accounts connected yet. You can still create posts and copy them to Facebook, Instagram or LinkedIn yourself. <a class="btn small" href="#/settings">Connect accounts</a></div>`
+    }
+    <p class="small"><a href="#/studio">Something else? Events, service tips, reviews →</a></p>
+    ${
+      recent.length
+        ? `<div class="card"><div class="card-head"><h3>Recent posts</h3><div class="actions"><a class="btn small" href="#/posts">See all</a></div></div>
+      ${recent.map((p) => `<div class="list-item"><div>${pIcon(p.platform)}</div><div class="grow"><div class="clip">${esc(p.content.split('\n')[0])}</div><div class="small muted">${statusBadge(p.status)} ${fmtDate(p.published_at || p.scheduled_at || p.created_at)}</div></div><button class="small" data-edit="${p.id}">Open</button></div>`).join('')}</div>`
+        : ''
+    }
+  </div>`;
+  view.onclick = (e) => {
+    const cond = e.target.closest('[data-cond]');
+    if (cond) {
+      wiz = { ...freshWizard(), condition: cond.dataset.cond };
+      return goTo('objective');
+    }
+    const ed = e.target.closest('[data-edit]');
+    if (ed) openPostEditor(Number(ed.dataset.edit), () => route());
+  };
+}
+
+function renderObjective() {
+  const list = state.meta.objectives[wiz.condition];
+  view.innerHTML = `<div class="create">
+    ${stepper(1)}
+    <div class="row"><button class="small" id="back">← Back</button><h2 class="create-h">${wiz.condition === 'new' ? 'New vehicle' : 'Used vehicle'}: what’s the goal?</h2></div>
+    <div class="objective-grid">${list
+      .map(
+        (o) => `<button class="objective ${wiz.objective === o.key ? 'selected' : ''}" data-objective="${o.key}">
+          <span class="objective-emoji" aria-hidden="true">${o.emoji}</span><span><span class="objective-label">${esc(o.label)}</span><span class="objective-hint">${esc(o.hint)}</span></span></button>`,
+      )
+      .join('')}</div>
+  </div>`;
+  $('#back').onclick = () => goTo('condition');
+  view.onclick = (e) => {
+    const b = e.target.closest('[data-objective]');
+    if (!b) return;
+    if (wiz.objective !== b.dataset.objective) wiz.posts = [];
+    wiz.objective = b.dataset.objective;
+    goTo('details');
+  };
+}
+
+async function renderDetails() {
+  const o = objectiveDef();
+  const required = o.required ?? ['make', 'model'];
+  const vehicles = (await api('GET', '/vehicles?status=available')).filter((v) => (wiz.condition === 'new' ? v.condition === 'new' : v.condition !== 'new'));
+  const fieldHtml = (key) => {
+    const f = state.meta.fields[key];
+    const label = `${esc(o.labels?.[key] || f.label)}${required.includes(key) ? ' <span class="req">*</span>' : ''}`;
+    const value = esc(wiz.details[key] ?? '');
+    const control =
+      f.type === 'textarea'
+        ? `<textarea id="f-${key}" name="${key}" rows="3" placeholder="${esc(f.placeholder || '')}">${value}</textarea>`
+        : `<input id="f-${key}" name="${key}" type="${f.type === 'date' ? 'date' : 'text'}" ${f.inputmode ? `inputmode="${f.inputmode}"` : ''} placeholder="${esc(f.placeholder || '')}" value="${value}" autocomplete="off">`;
+    return `<label class="field ${f.half ? '' : 'full'}" for="f-${key}"><span>${label}${key === 'mileage' ? ` (${esc(state.dealership.distance_unit)})` : ''}</span>${control}</label>`;
+  };
+  view.innerHTML = `<form class="create" id="details-form" novalidate>
+    ${stepper(2)}
+    <div class="row"><button type="button" class="small" id="back">← Back</button><h2 class="create-h">${o.emoji} ${esc(o.label)}</h2></div>
+    ${
+      vehicles.length
+        ? `<label class="field" for="pick-vehicle"><span>Fill in from your inventory (optional)</span><select id="pick-vehicle"><option value="">Choose a vehicle…</option>${vehicles
+            .map(
+              (v) =>
+                `<option value="${v.id}" ${wiz.vehicleId === v.id ? 'selected' : ''}>${esc([v.year, v.make, v.model, v.trim].filter(Boolean).join(' '))}${v.stock_number ? ` · #${esc(v.stock_number)}` : ''}</option>`,
+            )
+            .join('')}</select></label>`
+        : ''
+    }
+    <div class="form-grid compact">${o.fields.map(fieldHtml).join('')}</div>
+    <div class="field full"><span class="small muted">Photos <span class="muted">(posts with photos get far more attention; Instagram needs one)</span></span>
+      <div class="photo-grid" id="photo-grid"></div>
+      <div class="row">
+        <label class="btn" for="photo-input">📷 Add photos</label>
+        <input type="file" id="photo-input" accept="image/jpeg,image/png,image/webp,image/*" multiple hidden>
+        <span class="small muted" id="photo-status"></span>
+      </div>
+    </div>
+    <div class="form-error" id="details-error"></div>
+    <div class="action-bar"><button class="primary big" id="generate" type="submit">✨ Create my post</button></div>
+  </form>`;
+
+  const form = $('#details-form');
+  const readForm = () => {
+    for (const key of o.fields) wiz.details[key] = $(`#f-${key}`, form).value.trim();
+  };
+  const drawPhotos = () => {
+    $('#photo-grid').innerHTML = wiz.photos
+      .map(
+        (url, i) =>
+          `<div class="photo"><img src="${esc(url)}" alt="Photo ${i + 1}">${i === 0 ? '<span class="badge info">Cover</span>' : ''}<button type="button" class="photo-x" data-remove="${i}" aria-label="Remove photo">✕</button></div>`,
+      )
+      .join('');
+  };
+  drawPhotos();
+
+  $('#back').onclick = () => {
+    readForm();
+    goTo('objective');
+  };
+  const pick = $('#pick-vehicle');
+  if (pick)
+    pick.onchange = () => {
+      const v = vehicles.find((x) => x.id === Number(pick.value));
+      wiz.vehicleId = v ? v.id : null;
+      if (!v) return;
+      for (const key of o.fields) {
+        const val = v[key];
+        if (val != null && val !== '' && $(`#f-${key}`, form)) $(`#f-${key}`, form).value = key === 'price' && val ? `$${Number(val).toLocaleString()}` : val;
+      }
+      for (const url of v.photos || []) if (!wiz.photos.includes(url)) wiz.photos.push(url);
+      drawPhotos();
+    };
+  $('#photo-grid').onclick = (e) => {
+    const b = e.target.closest('[data-remove]');
+    if (!b) return;
+    wiz.photos.splice(Number(b.dataset.remove), 1);
+    drawPhotos();
+  };
+  $('#photo-input').onchange = async (e) => {
+    const files = [...e.target.files];
+    e.target.value = '';
+    const status = $('#photo-status');
+    let done = 0;
+    for (const file of files) {
+      status.textContent = `Uploading ${done + 1} of ${files.length}…`;
+      try {
+        wiz.photos.push(await uploadPhoto(file));
+        drawPhotos();
+      } catch (err) {
+        toast(`${file.name}: ${err.message}`, 'error');
+      }
+      done++;
+    }
+    status.textContent = '';
+  };
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    readForm();
+    const missing = required.filter((k) => !wiz.details[k]).map((k) => o.labels?.[k] || state.meta.fields[k].label);
+    if (missing.length) {
+      $('#details-error').textContent = `Please add: ${missing.join(', ')}`;
+      $(`#f-${required.find((k) => !wiz.details[k])}`, form)?.focus();
+      return;
+    }
+    await generate($('#generate'));
+  };
+}
+
+async function generate(btn) {
+  const label = btn?.textContent;
+  // Nothing else can be pressed while the post is being written.
+  const locked = [...view.querySelectorAll('.action-bar button, #back, #again')].filter((b) => !b.disabled);
+  locked.forEach((b) => (b.disabled = true));
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '✨ Writing your post…';
+  }
+  const previous = wiz.posts;
+  try {
+    const accounts = await api('GET', '/accounts');
+    const extra = liveAccounts(accounts)
+      .map((a) => a.platform)
+      .filter((p) => !CORE_PLATFORMS.includes(p));
+    const platforms = [...CORE_PLATFORMS, ...new Set(extra)];
+    const r = await api('POST', '/generate', {
+      post_type: wiz.objective,
+      details: wiz.details,
+      media: wiz.photos,
+      vehicle_id: wiz.vehicleId || undefined,
+      platforms,
+    });
+    // The new version replaces the drafts from the previous attempt (only once it exists).
+    for (const p of previous) if (p.status === 'draft') await api('DELETE', `/posts/${p.id}`).catch(() => {});
+    wiz.posts = r.posts;
+    wiz.include = Object.fromEntries(r.posts.map((p) => [p.id, !(p.platform === 'instagram' && !p.media.length)]));
+    goTo('review');
+  } catch (err) {
+    locked.forEach((b) => (b.disabled = false));
+    toast(err.message, 'error', err.status === 402 ? { href: '#/billing', label: 'See plans' } : null);
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  }
+}
+
+async function renderReview() {
+  const accounts = await api('GET', '/accounts');
+  const live = new Set(liveAccounts(accounts).map((a) => a.platform));
+  const manager = isManager();
+  const cards = wiz.posts
+    .map((p) => {
+      const rules = state.meta.platforms[p.platform];
+      const connected = live.has(p.platform);
+      const needsPhoto = rules.requiresMedia && !p.media.length;
+      return `<article class="variant ${wiz.include[p.id] ? '' : 'off'}" data-post="${p.id}">
+        <header class="variant-head">
+          <label class="variant-toggle"><input type="checkbox" data-include="${p.id}" ${wiz.include[p.id] ? 'checked' : ''} ${needsPhoto ? 'disabled' : ''}> <strong>${pIcon(p.platform)} ${esc(rules.label)}</strong></label>
+          <span class="badge ${connected ? 'good' : ''}">${connected ? 'Connected' : 'Copy & post yourself'}</span>
+        </header>
+        ${needsPhoto ? `<div class="small" style="color:var(--warn)">${esc(rules.label)} needs a photo. Go back and add one to post here.</div>` : ''}
+        ${p.media[0] ? `<img class="variant-photo" src="${esc(p.media[0])}" alt="">` : ''}
+        <textarea class="variant-text" data-content="${p.id}" aria-label="${esc(rules.label)} post text">${esc(p.content)}</textarea>
+        <input class="variant-tags" data-tags="${p.id}" value="${esc(p.hashtags.join(' '))}" aria-label="Hashtags" placeholder="#hashtags">
+        <div class="char-count" data-count="${p.id}"></div>
+      </article>`;
+    })
+    .join('');
+  view.innerHTML = `<div class="create">
+    ${stepper(3)}
+    <div class="row"><button class="small" id="back">← Change details</button><span class="spacer"></span><button class="small" id="again">↻ Try another version</button></div>
+    <h2 class="create-h">Here’s your post. Edit anything, then choose where it goes.</h2>
+    <div class="variants">${cards}</div>
+    <div class="schedule-row" id="schedule-row" hidden>
+      <label class="field" for="when"><span>Post on</span><input type="datetime-local" id="when" value="${toLocalInput(new Date(Date.now() + 3600_000).toISOString())}"></label>
+      <button class="primary" id="confirm-schedule">Schedule</button>
+    </div>
+    <div class="action-bar">
+      ${
+        manager
+          ? `<button class="primary big" id="publish"></button><button id="schedule">🕒 Schedule</button>`
+          : `<button class="primary big" id="submit">Send to my manager for approval</button>`
+      }
+      <button id="save-draft">Save draft</button>
+    </div>
+  </div>`;
+
+  const counter = (id) => {
+    const p = wiz.posts.find((x) => x.id === id);
+    const max = state.meta.platforms[p.platform].maxChars;
+    const text = composeClient({ content: $(`[data-content="${id}"]`).value, hashtags: $(`[data-tags="${id}"]`).value.split(/\s+/).filter(Boolean) });
+    const el = $(`[data-count="${id}"]`);
+    el.textContent = `${text.length.toLocaleString()} / ${max.toLocaleString()} characters`;
+    el.classList.toggle('over', text.length > max);
+  };
+  const selected = () => wiz.posts.filter((p) => wiz.include[p.id]);
+  const refreshButtons = () => {
+    const connectedCount = selected().filter((p) => live.has(p.platform)).length;
+    const pub = $('#publish');
+    if (pub)
+      pub.textContent = connectedCount ? `Publish now (${connectedCount} account${connectedCount === 1 ? '' : 's'})` : 'Done: get my posts ready to copy';
+    const sch = $('#schedule');
+    if (sch) {
+      sch.disabled = !connectedCount;
+      sch.title = connectedCount ? '' : 'Connect an account in Settings to schedule posts';
+    }
+    for (const id of ['publish', 'submit', 'save-draft']) if ($(`#${id}`)) $(`#${id}`).disabled = !selected().length;
+  };
+  for (const p of wiz.posts) counter(p.id);
+  refreshButtons();
+
+  // Keep edits in memory as the manager types, so going back and forth never loses them.
+  view.oninput = (e) => {
+    const id = Number(e.target.dataset.content || e.target.dataset.tags);
+    if (!id) return;
+    const p = wiz.posts.find((x) => x.id === id);
+    if (e.target.dataset.content) p.content = e.target.value;
+    else
+      p.hashtags = e.target.value
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((t) => (t.startsWith('#') ? t : `#${t}`));
+    counter(id);
+  };
+  view.onchange = (e) => {
+    const id = Number(e.target.dataset.include);
+    if (!id) return;
+    wiz.include[id] = e.target.checked;
+    e.target.closest('.variant').classList.toggle('off', !e.target.checked);
+    refreshButtons();
+  };
+  $('#back').onclick = () => goTo('details');
+  $('#again').onclick = (e) => generate(e.target);
+
+  const run = async (btn, mode, when) => {
+    btn.disabled = true;
+    try {
+      wiz.results = await finish(mode, live, when);
+      goTo('done');
+    } catch (err) {
+      toast(err.message, 'error', err.status === 402 ? { href: '#/billing', label: 'See plans' } : null);
+      btn.disabled = false;
+    }
+  };
+  if ($('#publish')) $('#publish').onclick = (e) => run(e.target, 'publish');
+  if ($('#submit')) $('#submit').onclick = (e) => run(e.target, 'submit');
+  $('#save-draft').onclick = (e) => run(e.target, 'draft');
+  if ($('#schedule'))
+    $('#schedule').onclick = () => {
+      $('#schedule-row').hidden = false;
+      $('#schedule-row').scrollIntoView({ block: 'center', behavior: 'smooth' });
+      $('#when').focus();
+    };
+  if ($('#confirm-schedule'))
+    $('#confirm-schedule').onclick = (e) => {
+      const when = fromLocalInput($('#when').value);
+      if (!when || new Date(when) < Date.now() - 60_000) return toast('Pick a time in the future', 'error');
+      run(e.target, 'schedule', when);
+    };
+}
+
+/** Save edits, drop unticked platforms, then publish / schedule / submit / keep as draft. */
+async function finish(mode, live, when) {
+  const results = [];
+  for (const p of wiz.posts) {
+    if (!wiz.include[p.id]) {
+      await api('DELETE', `/posts/${p.id}`).catch(() => {});
+      continue;
+    }
+    let post = await api('PATCH', `/posts/${p.id}`, { content: p.content, hashtags: p.hashtags });
+    const connected = live.has(p.platform);
+    let outcome = 'draft';
+    if (mode === 'submit') {
+      post = await api('POST', `/posts/${p.id}/submit`);
+      outcome = 'submitted';
+    } else if (connected && mode === 'publish') {
+      post = await api('POST', `/posts/${p.id}/publish`);
+      outcome = post.status === 'published' ? 'published' : 'failed';
+    } else if (connected && mode === 'schedule') {
+      post = await api('POST', `/posts/${p.id}/schedule`, { scheduled_at: when });
+      outcome = 'scheduled';
+    } else if (!connected && mode !== 'draft') {
+      outcome = 'manual';
+    }
+    results.push({ post, outcome });
+  }
+  wiz.posts = [];
+  refreshBadges();
+  return results;
+}
+
+function renderDone() {
+  const r = wiz.results || [];
+  const line = ({ post, outcome }) => {
+    const label = `${pIcon(post.platform)} ${esc(platformLabel(post.platform))}`;
+    if (outcome === 'published')
+      return `<li>✅ Posted to ${label}${post.external_url ? ` · <a href="${esc(post.external_url)}" target="_blank" rel="noopener">View post ↗</a>` : ''}</li>`;
+    if (outcome === 'failed')
+      return `<li>⚠️ ${label} didn’t go through: ${esc(post.error || 'unknown error')} <button class="small" data-edit="${post.id}">Fix &amp; retry</button></li>`;
+    if (outcome === 'scheduled') return `<li>🕒 ${label} scheduled for ${fmtDate(post.scheduled_at)}</li>`;
+    if (outcome === 'submitted') return `<li>📨 ${label} sent to your manager for approval</li>`;
+    if (outcome === 'draft') return `<li>💾 ${label} saved as a draft in My Posts</li>`;
+    return '';
+  };
+  const manual = r.filter((x) => x.outcome === 'manual');
+  const canShare = !!navigator.canShare;
+  view.innerHTML = `<div class="create">
+    <h2 class="create-q">${manual.length && manual.length === r.length ? 'Your post is ready to share 🎉' : 'Done! 🎉'}</h2>
+    ${r.some((x) => x.outcome !== 'manual') ? `<ul class="result-list">${r.map(line).join('')}</ul>` : ''}
+    ${
+      manual.length
+        ? `<div class="stack"><p class="muted">These accounts aren’t connected, so copy each post and paste it into the app. <a href="#/settings">Connect them</a> to publish in one tap next time.</p>
+        ${manual
+          .map(
+            ({ post }) => `<div class="card manual" data-post="${post.id}">
+          <div class="card-head"><h3>${pIcon(post.platform)} ${esc(platformLabel(post.platform))}</h3><span class="badge" data-state="${post.id}">Not posted yet</span></div>
+          ${post.media[0] ? `<img class="variant-photo" src="${esc(post.media[0])}" alt="">` : ''}
+          <textarea class="variant-text" readonly>${esc(composeClient(post))}</textarea>
+          <div class="row">
+            <button class="primary" data-copy="${post.id}">📋 Copy text</button>
+            ${canShare ? `<button data-share="${post.id}">📤 Share…</button>` : ''}
+            ${post.media[0] ? `<a class="btn" href="${esc(post.media[0])}" download>⬇ Save photo</a>` : ''}
+            <a class="btn" href="${PLATFORM_HOME[post.platform]}" target="_blank" rel="noopener">Open ${esc(platformLabel(post.platform))} ↗</a>
+            <button data-posted="${post.id}">✔ I posted it</button>
+          </div></div>`,
+          )
+          .join('')}</div>`
+        : ''
+    }
+    <div class="action-bar static"><button class="primary big" id="another">✍️ Create another post</button><a class="btn" href="#/posts">My Posts</a></div>
+  </div>`;
+  const find = (id) => manual.find((x) => x.post.id === Number(id))?.post;
+  view.onclick = async (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.id === 'another') {
+      wiz = freshWizard();
+      return goTo('condition');
+    }
+    if (b.dataset.edit) return openPostEditor(Number(b.dataset.edit), () => {});
+    if (b.dataset.copy) {
+      const text = composeClient(find(b.dataset.copy));
+      try {
+        await navigator.clipboard.writeText(text);
+        toast('Copied. Paste it into the app.');
+      } catch {
+        const ta = b.closest('.card').querySelector('textarea');
+        ta.focus();
+        ta.select();
+        toast('Text selected. Press copy on your keyboard.');
+      }
+    }
+    if (b.dataset.share) {
+      const post = find(b.dataset.share);
+      try {
+        const data = { text: composeClient(post) };
+        if (post.media[0]) {
+          const blob = await (await fetch(post.media[0])).blob();
+          const file = new File([blob], 'vehicle.jpg', { type: blob.type || 'image/jpeg' });
+          if (navigator.canShare({ files: [file] })) data.files = [file];
+        }
+        await navigator.share(data);
+      } catch (err) {
+        if (err.name !== 'AbortError') toast('Sharing isn’t available here. Use Copy text instead.', 'error');
+      }
+    }
+    if (b.dataset.posted) {
+      await act(b, () => api('POST', `/posts/${b.dataset.posted}/mark-posted`), 'Marked as posted');
+      const badge = $(`[data-state="${b.dataset.posted}"]`);
+      if (badge) {
+        badge.textContent = 'Posted';
+        badge.classList.add('good');
+      }
+      b.disabled = true;
+    }
+  };
+}
+
 // ---------- shell & router ----------
 const TITLES = {
-  dashboard: 'Dashboard',
+  create: 'Create Post',
+  dashboard: 'Overview',
   assistant: 'AI Assistant',
-  studio: 'Content Studio',
+  studio: 'Other Posts',
   approvals: 'Approvals',
   calendar: 'Content Calendar',
-  posts: 'All Posts',
+  posts: 'My Posts',
   inbox: 'Inbox',
   inventory: 'Inventory',
   autopilot: 'Autopilot',
   analytics: 'Analytics',
-  settings: 'Settings',
+  settings: 'Accounts & Settings',
   team: 'Team',
   billing: 'Plan & Billing',
 };
@@ -1175,23 +1726,23 @@ async function loadShell() {
   renderUserBox();
   renderBanner();
   $('#dealer-name').textContent = dealer.name;
-  $('#ai-status').innerHTML = meta.ai_enabled
-    ? `🟢 AI bot online<br><span class="small">${esc(meta.ai_model)}</span>`
-    : '🟡 AI bot offline — using templates.<br><span class="small">Set ANTHROPIC_API_KEY to enable.</span>';
-  $('#mode-badge').innerHTML =
-    dealer.autonomy === 'autopilot'
-      ? '<a href="#/autopilot" class="badge good">🚀 Autopilot</a>'
-      : '<a href="#/autopilot" class="badge info">🤝 Assist mode</a>';
+  // Only the platform owner needs to know how AI is configured.
+  $('#ai-status').hidden = meta.ai_enabled || !state.me.user.is_superadmin;
+  $('#ai-status').innerHTML = 'AI writing is off: posts use built-in templates. Set ANTHROPIC_API_KEY on the server to turn it on.';
+  $('#mode-badge').innerHTML = dealer.autonomy === 'autopilot' ? '<a href="#/autopilot" class="badge good">🚀 Autopilot on</a>' : '';
 }
 
 async function route() {
-  const name = (location.hash.replace(/^#\//, '').split('?')[0] || 'dashboard').trim();
-  const render = views[name] || views.dashboard;
-  $$('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.view === name));
-  $('#view-title').textContent = TITLES[name] || 'Dashboard';
+  let name = (location.hash.replace(/^#\//, '').split('?')[0] || 'create').trim();
+  if (!views[name]) name = 'create';
+  const render = views[name];
+  $$('#nav a, #tabbar a').forEach((a) => a.classList.toggle('active', a.dataset.view === name));
+  if ($('#nav-more a.active')) $('#nav-more').open = true;
+  $('#view-title').textContent = TITLES[name] || 'Create Post';
   $('#sidebar').classList.remove('open');
   view.onclick = null;
   view.onchange = null;
+  view.oninput = null;
   try {
     await render();
   } catch (err) {
@@ -1201,6 +1752,17 @@ async function route() {
 }
 
 $('#menu-btn').onclick = () => $('#sidebar').classList.toggle('open');
+$('#tab-more').onclick = () => {
+  $('#sidebar').classList.toggle('open');
+  $('#nav-more').open = true;
+};
+// Tapping "Create" while already on it starts a fresh post.
+$('#tabbar a[data-view="create"]').addEventListener('click', () => {
+  if (location.hash.startsWith('#/create')) {
+    wiz = freshWizard();
+    route();
+  }
+});
 window.addEventListener('hashchange', route);
 loadShell()
   .then(route)

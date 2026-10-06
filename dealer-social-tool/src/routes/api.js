@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import express from 'express';
-import { PLATFORMS, POST_TYPES, POST_STATUSES, config } from '../config.js';
+import { PLATFORMS, POST_TYPES, POST_STATUSES, GENERAL_POST_TYPES, config } from '../config.js';
+import { OBJECTIVES, FIELDS } from '../shared/objectives.js';
 import { all } from '../db.js';
 import { tenantId } from '../tenant.js';
 import { PLANS } from '../plans.js';
@@ -23,6 +24,7 @@ import {
   schedulePost,
   unschedulePost,
   statusCounts,
+  markPostedManually,
 } from '../services/posts.js';
 import { createPostsFromIdea } from '../services/content.js';
 import { publishPost, refreshMetrics } from '../services/publisher.js';
@@ -43,6 +45,7 @@ import { listTeam, inviteMember, revokeInvite, changeRole, removeMember } from '
 import { createCheckout, createPortal, stripeEnabled } from '../services/billing.js';
 import { oauthStatus, startOAuth, pendingOptions, connectOptions } from '../services/oauth.js';
 import { httpError } from '../services/errors.js';
+import { savePhoto, cleanMediaList, MAX_PHOTO_BYTES } from '../services/media.js';
 
 /** Routes for the logged-in user's current dealership. Mounted behind requireDealership. */
 export const api = express.Router();
@@ -63,6 +66,9 @@ api.get('/meta', (req, res) => {
     ai_model: aiEnabled() ? config.aiModel : null,
     platforms: Object.fromEntries(Object.entries(PLATFORMS).map(([k, p]) => [k, { ...p, live_supported: liveSupported(k) }])),
     post_types: POST_TYPES,
+    general_post_types: GENERAL_POST_TYPES,
+    objectives: OBJECTIVES,
+    fields: FIELDS,
     post_statuses: POST_STATUSES,
     oauth: oauthStatus(),
     billing_enabled: stripeEnabled(),
@@ -167,13 +173,20 @@ api.post('/posts', (req, res) => res.status(201).json(createPost({ ...req.body, 
 api.patch('/posts/:id', (req, res) => {
   const p = getPost(id(req));
   if (p && ['approved', 'scheduled'].includes(p.status) && req.session.role === 'staff') throw httpError(403, 'Ask a manager to edit approved posts');
-  res.json(updatePost(id(req), req.body));
+  const body = { ...req.body };
+  if (body.media !== undefined) body.media = cleanMediaList(body.media) || [];
+  res.json(updatePost(id(req), body));
 });
-api.delete('/posts/:id', manager, (req, res) => {
+api.delete('/posts/:id', (req, res) => {
+  // Anyone can throw away a draft they just generated; deleting anything else needs a manager.
+  const post = getPost(id(req));
+  if (post && post.status !== 'draft' && RANK[req.session.role] < RANK.manager) throw httpError(403, 'Only a manager can delete this post');
   deletePost(id(req));
   res.status(204).end();
 });
 api.post('/posts/:id/submit', (req, res) => res.json(submitForApproval(id(req))));
+// For networks that aren't connected: the manager posts it themselves and records it here.
+api.post('/posts/:id/mark-posted', (req, res) => res.json(markPostedManually(id(req), { url: req.body?.url })));
 api.post('/posts/:id/approve', manager, (req, res) => res.json(approvePost(id(req))));
 api.post('/posts/:id/reject', manager, (req, res) => res.json(rejectPost(id(req), req.body?.reason)));
 api.post('/posts/:id/schedule', manager, (req, res) => res.json(schedulePost(id(req), req.body?.scheduled_at)));
@@ -197,9 +210,14 @@ api.post('/posts/approve-batch', manager, (req, res) => {
   res.json(ids.map((pid) => approvePost(Number(pid))));
 });
 
+// --- photos ---
+api.post('/media', express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: MAX_PHOTO_BYTES }), (req, res) => {
+  res.status(201).json(savePhoto(req.body));
+});
+
 // --- AI content studio ---
 api.post('/generate', async (req, res) => {
-  const { post_type, platforms, vehicle_id, instructions, scheduled_at, media } = req.body || {};
+  const { post_type, platforms, vehicle_id, instructions, scheduled_at, media, details } = req.body || {};
   res.status(201).json(
     await createPostsFromIdea({
       postType: post_type,
@@ -207,7 +225,8 @@ api.post('/generate', async (req, res) => {
       vehicleId: vehicle_id,
       instructions,
       scheduledAt: scheduled_at,
-      media,
+      media: cleanMediaList(media),
+      details: details && typeof details === 'object' ? details : null,
       actor: 'user',
       source: 'ai',
     }),

@@ -7,7 +7,7 @@ COPY src ./src
 COPY public ./public
 COPY scripts ./scripts
 # SQLite database and nightly backups live on a mounted volume.
-ENV DATABASE_PATH=/data/dealer-social.db BACKUP_DIR=/data/backups PORT=3000
+ENV DATABASE_PATH=/data/dealer-social.db BACKUP_DIR=/data/backups MEDIA_DIR=/data/media PORT=3000
 VOLUME ["/data"]
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s CMD node -e "fetch('http://localhost:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"

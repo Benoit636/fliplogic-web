@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { OBJECTIVE_LIST } from './shared/objectives.js';
 
 // Minimal .env loader so the project has no extra dependency for it.
 function loadDotEnv(file = path.resolve(process.cwd(), '.env')) {
@@ -32,6 +33,8 @@ export const config = {
   superadminEmails: list(env.SUPERADMIN_EMAILS),
   databasePath: env.DATABASE_PATH || './data/dealer-social.db',
   backupDir: env.BACKUP_DIR || './data/backups',
+  // Uploaded vehicle photos. They are served publicly at /media so Facebook/Instagram can fetch them.
+  mediaDir: env.MEDIA_DIR || './data/media',
   trialDays: Number(env.TRIAL_DAYS || 14),
 
   anthropicApiKey: env.ANTHROPIC_API_KEY || '',
@@ -78,6 +81,8 @@ export const PLATFORMS = {
 export const PLATFORM_KEYS = Object.keys(PLATFORMS);
 
 export const POST_TYPES = {
+  // Create Post objectives (New / Used)
+  ...Object.fromEntries(OBJECTIVE_LIST.map((o) => [o.key, `${o.condition === 'new' ? 'New' : 'Used'} · ${o.label}`])),
   vehicle_spotlight: 'Vehicle spotlight',
   new_arrival: 'New arrival',
   price_drop: 'Price drop',
@@ -94,7 +99,10 @@ export const POST_TYPES = {
 
 export const POST_TYPE_KEYS = Object.keys(POST_TYPES);
 
-// Post types that are about one specific vehicle.
+// Older post types about one inventory vehicle (used by autopilot rules and the AI assistant).
 export const VEHICLE_POST_TYPES = ['vehicle_spotlight', 'new_arrival', 'price_drop', 'sold_celebration'];
+
+// Posts that aren't about a specific vehicle (events, tips, reviews…).
+export const GENERAL_POST_TYPES = ['promotion', 'event', 'service_tip', 'review_highlight', 'holiday', 'engagement', 'team_spotlight', 'custom'];
 
 export const POST_STATUSES = ['draft', 'pending_approval', 'approved', 'scheduled', 'publishing', 'published', 'failed', 'rejected'];

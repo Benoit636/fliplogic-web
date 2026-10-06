@@ -1,5 +1,6 @@
 import { PLATFORMS, POST_TYPES } from '../config.js';
 import { vehicleTitle } from '../services/inventory.js';
+import { briefFacts, mentionsPricing } from '../shared/objectives.js';
 
 export function dealershipBrief(d) {
   return [
@@ -33,7 +34,9 @@ Rules:
   google_business = plain informative update, no hashtags.
 - Only state vehicle facts that are provided. Never invent prices, rebates, APRs, payments, mileage or features.
 - If a price is mentioned, add the compliance note briefly where space allows.
-- End with a clear call to action (visit, call, DM, book a test drive).
+- Structure every post: a strong opening hook line, a short description, the most important selling points
+  (short lines or a compact list), then a clear call to action (visit, call, DM, book a test drive).
+- Write real social content for the post's objective. Never just restate an inventory listing or spec sheet.
 - Hashtags go in the "hashtags" array (with the leading #), not inside the content text.
 - "image_idea" describes the ideal photo or short video to pair with the post.
 
@@ -60,5 +63,18 @@ export function postRequest({ postType, vehicle, platforms, instructions, unit }
     `Write one ${POST_TYPES[postType] || postType} post for each of these platforms: ${platforms.join(', ')}.`,
     vehicle ? `\n${vehicleFacts(vehicle, unit)}` : '',
     instructions ? `\nExtra instructions from the dealership: ${instructions}` : '',
+  ].join('\n');
+}
+
+/** Prompt for the New/Used "Create Post" flow: objective + exactly what the manager typed. */
+export function objectiveRequest({ objective, details, platforms, unit, instructions }) {
+  return [
+    `Write one ${objective.condition === 'new' ? 'NEW' : 'USED'} vehicle post with the objective "${objective.label}" for each of these platforms: ${platforms.join(', ')}.`,
+    `\nObjective guidance: ${objective.angle}`,
+    `\nDetails from the sales manager (the only facts you may use):\n${briefFacts(objective, details, unit) || '(none given; keep it general and invite people to ask)'}`,
+    mentionsPricing(details) ? '\nThis post mentions pricing or an offer: include the compliance note on every platform where space allows.' : '',
+    details.offer_expires ? '\nState the offer end date.' : '',
+    instructions ? `\nExtra instructions: ${instructions}` : '',
+    '\nNever invent payments, rates, rebates, incentives, expiry dates, warranty, mileage, vehicle history or features that are not listed above.',
   ].join('\n');
 }

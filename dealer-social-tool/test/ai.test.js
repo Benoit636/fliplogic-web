@@ -131,3 +131,21 @@ test('invalid tool input is reported back to the model instead of crashing', asy
   assert.equal(result.actions[0].ok, false);
   assert.match(requests[1].body.messages.at(-1).content[0].content, /Invalid input/);
 });
+
+test('Create Post objectives send the objective guidance and only the typed facts to Claude', async () => {
+  mods.helpers.setupDb();
+  const { createPostsFromIdea } = await import('../src/services/content.js');
+  const r = await createPostsFromIdea({
+    postType: 'used_aged',
+    details: { year: '2020', make: 'Jeep', model: 'Wrangler', price: '39900', features: 'Removable top' },
+    platforms: ['facebook', 'linkedin'],
+  });
+  assert.equal(r.engine, 'claude');
+  assert.equal(r.posts.length, 2);
+  const prompt = requests.at(-1).body.messages[0].content;
+  assert.match(prompt, /USED vehicle post with the objective "Needs to Move"/);
+  assert.match(prompt, /NEVER mention how long it has been in stock/);
+  assert.match(prompt, /Price: \$39,900/);
+  assert.match(prompt, /compliance note/);
+  assert.doesNotMatch(prompt, /Mileage|Stock #/, 'empty fields are left out');
+});

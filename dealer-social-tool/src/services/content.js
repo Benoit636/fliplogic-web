@@ -6,6 +6,7 @@ import { getVehicle, markVehiclePosted, markSoldCelebrated, vehicleTitle } from 
 import { createPost } from './posts.js';
 import { httpError } from './errors.js';
 import { consumeAiPosts, addUsage } from './entitlements.js';
+import { OBJECTIVE_BY_KEY, vehicleName } from '../shared/objectives.js';
 
 /**
  * Turn one idea into a batch of platform-specific posts.
@@ -18,6 +19,7 @@ export async function createPostsFromIdea({
   instructions = '',
   scheduledAt = null,
   media = null,
+  details = null,
   actor = 'user',
   source = 'ai',
 }) {
@@ -28,12 +30,14 @@ export async function createPostsFromIdea({
   consumeAiPosts(reserved);
   let generated;
   try {
-    generated = await generatePostVariants({ postType, vehicle, platforms, instructions });
+    generated = await generatePostVariants({ postType, vehicle, details, platforms, instructions });
   } catch (err) {
     addUsage('ai_posts', -reserved); // don't charge the allowance for a failed generation
     throw err;
   }
   const { engine, variants } = generated;
+  const objective = OBJECTIVE_BY_KEY[postType];
+  const brief = objective ? { condition: objective.condition, objective: postType, details: generated.details } : {};
   const batchId = crypto.randomUUID();
   const autoPublish = actor !== 'user' && isAutopilot() && scheduledAt;
   const status = actor === 'user' ? 'draft' : autoPublish ? 'scheduled' : 'pending_approval';
@@ -49,6 +53,7 @@ export async function createPostsFromIdea({
         source,
         batch_id: batchId,
         scheduled_at: scheduledAt,
+        brief,
       },
       actor,
     ),
@@ -58,6 +63,7 @@ export async function createPostsFromIdea({
     markVehiclePosted(vehicle.id);
     if (postType === 'sold_celebration') markSoldCelebrated(vehicle.id);
   }
-  logActivity(actor, 'content.generated', `${posts.length} ${postType} post(s)${vehicle ? ` for ${vehicleTitle(vehicle)}` : ''} via ${engine}`);
+  const subject = vehicle ? vehicleTitle(vehicle) : objective ? vehicleName(generated.details) : '';
+  logActivity(actor, 'content.generated', `${posts.length} ${postType} post(s)${subject ? ` for ${subject}` : ''} via ${engine}`);
   return { engine, batch_id: batchId, posts };
 }
