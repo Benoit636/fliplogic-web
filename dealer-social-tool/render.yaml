@@ -1,0 +1,34 @@
+# One-click deploy on Render (https://render.com): New → Blueprint → pick this repo.
+# Render reads render.yaml from the repository root, so use it once this project lives in its own repo.
+# Step-by-step guide: docs/DEPLOY.md
+services:
+  - type: web
+    name: dealer-social
+    runtime: docker
+    plan: starter
+    healthCheckPath: /healthz
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 5
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_SECRET
+        generateValue: true
+      - key: APP_URL
+        sync: false
+      - key: SUPERADMIN_EMAILS
+        sync: false
+      - key: SUPPORT_EMAIL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false

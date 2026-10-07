@@ -1,0 +1,111 @@
+<title>Dealer Social</title>
+<link rel="stylesheet" href="styles.css" />
+<div class="landing">
+<div class="demo-strip">Interactive demo: the dealer app runs in your browser with sample data. <a href="app.html">Open the dealer app →</a></div>
+
+    <header class="l-nav">
+      <a class="l-brand" href="index.html"><span class="brand-mark">DS</span> Dealer Social</a>
+      <nav>
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#faq">FAQ</a>
+        <a href="app.html">Log in</a>
+        <a class="btn primary" href="app.html">Open the demo</a>
+      </nav>
+    </header>
+
+    <section class="l-hero">
+      <div>
+        <span class="badge info">Built for car dealerships</span>
+        <h1>Your AI social media manager.<br />It posts your inventory while you sell cars.</h1>
+        <p class="l-lead">
+          Dealer Social turns your live inventory into scroll-stopping posts for Facebook, Instagram, TikTok, Google, LinkedIn and X —
+          then schedules them, publishes them, answers comments and reviews, and flags hot leads for your sales team.
+        </p>
+        <div class="row">
+          <a class="btn primary big" href="app.html">Start your free 14-day trial</a>
+          <a class="btn big" href="#how">See how it works</a>
+        </div>
+        <p class="small muted">No credit card required · Set up in 10 minutes · Cancel anytime</p>
+      </div>
+      <div class="l-hero-card card">
+        <div class="row"><strong>📘 Facebook</strong><span class="spacer"></span><span class="badge good">Published</span></div>
+        <div class="small muted">Vehicle spotlight · by autopilot · 10:15 AM</div>
+        <div class="l-fake-photo">🚙</div>
+        <p style="white-space: pre-wrap; margin: 0">✨ Just landed: 2024 Tiguan Comfortline in Kings Red! AWD, heated seats and only 18,200 km. Perfect for Maritime winters. 🍁
+
+Book your test drive today — call us or send a DM!</p>
+        <div class="small" style="color: var(--accent)">#RiversideMotors #Moncton #Volkswagen</div>
+        <div class="small muted">👁 1,284 · ❤️ 96 · 💬 14 · 🔥 3 leads</div>
+      </div>
+    </section>
+
+    <section class="l-stats">
+      <div><strong>6</strong><span>networks from one screen</span></div>
+      <div><strong>Minutes</strong><span>a week, not hours</span></div>
+      <div><strong>24/7</strong><span>comment &amp; review triage</span></div>
+      <div><strong>0</strong><span>made-up prices — posts come from your real inventory</span></div>
+    </section>
+
+    <section id="features" class="l-section">
+      <h2>Everything a dealership needs on social. Nothing it doesn’t.</h2>
+      <div class="l-grid">
+        <div class="card"><h3>🚙 Inventory-powered posts</h3><p>Import your DMS CSV or plug in your inventory feed. New arrivals, price drops and sold cars become posts automatically.</p></div>
+        <div class="card"><h3>🤖 An AI assistant that does the work</h3><p>“Plan next week.” “Post the new F-150 everywhere.” “Answer the inbox.” It writes, schedules and reports back — in your brand voice.</p></div>
+        <div class="card"><h3>✅ You stay in control</h3><p>Assist mode sends every post to your approval queue. Flip on full autopilot when you trust it. Complaints and leads always go to a person.</p></div>
+        <div class="card"><h3>💬 Inbox that finds buyers</h3><p>Comments, DMs and Google reviews are triaged: leads, questions, complaints, spam. Suggested replies are ready to send.</p></div>
+        <div class="card"><h3>📅 Calendar &amp; autopilot rules</h3><p>“Vehicle spotlight Mon–Sat at 10:15.” The bot picks the right car each time and posts at the best local hours.</p></div>
+        <div class="card"><h3>📈 Know what sells</h3><p>Reach, engagement, clicks and leads by network and post type, with your top posts — so you do more of what works.</p></div>
+        <div class="card"><h3>⚖️ Compliance-aware</h3><p>Your disclaimer is added whenever a price appears. The AI never invents prices, payments, rates or incentives.</p></div>
+        <div class="card"><h3>👥 Built for teams &amp; groups</h3><p>Owners, managers and sales staff with the right permissions. Dealer groups switch between rooftops in one click.</p></div>
+        <div class="card"><h3>🇨🇦 Bilingual ready</h3><p>Post in English, French or both. Kilometres or miles. Your time zone. Your voice.</p></div>
+      </div>
+    </section>
+
+    <section id="how" class="l-section l-how">
+      <h2>Live in 10 minutes</h2>
+      <ol>
+        <li><strong>Tell us about your store.</strong> Name, voice, phone, disclaimer, hashtags.</li>
+        <li><strong>Connect your pages.</strong> One click for Facebook &amp; Instagram, Google Business Profile, LinkedIn, X and TikTok.</li>
+        <li><strong>Add your inventory.</strong> Upload a CSV or paste your feed URL — we keep it in sync.</li>
+        <li><strong>Turn on autopilot rules.</strong> Approve the first week of posts, then let it run.</li>
+      </ol>
+    </section>
+
+    <section id="pricing" class="l-section">
+      <h2>Simple pricing per rooftop</h2>
+      <p class="muted" style="text-align: center">Every plan starts with a free 14-day trial of Pro. No credit card needed.</p>
+      <div class="row" style="justify-content: center; margin: 12px 0 20px">
+        <div class="tabs" style="margin: 0" id="interval-tabs">
+          <button class="active" data-interval="month">Monthly</button>
+          <button data-interval="year">Yearly — 2 months free</button>
+        </div>
+      </div>
+      <div class="l-pricing" id="pricing-cards"></div>
+      <p class="small muted" style="text-align: center">Prices in USD per dealership, plus applicable taxes. Dealer groups with 5+ rooftops: <a href="mailto:sales@example.com" id="sales-link">talk to us</a>.</p>
+    </section>
+
+    <section id="faq" class="l-section l-faq">
+      <h2>Questions dealers ask</h2>
+      <details><summary>Will it post things I didn’t approve?</summary><p>Not unless you turn on full autopilot. In Assist mode (the default) every post waits in your approval queue.</p></details>
+      <details><summary>Where do the vehicle details come from?</summary><p>From your inventory — a CSV export from your DMS or an automatic feed URL. The AI only uses facts you provide.</p></details>
+      <details><summary>Do I need a marketing person?</summary><p>No. Once it’s set up, your weekly job is approving posts (or letting autopilot do it) and following up on the leads the bot flags.</p></details>
+      <details><summary>Which networks are supported?</summary><p>Facebook Pages, Instagram Business, Google Business Profile, LinkedIn Company Pages, X and TikTok.</p></details>
+      <details><summary>Can I cancel anytime?</summary><p>Yes. Manage or cancel your subscription yourself from the Billing page. Your data stays available to export.</p></details>
+      <details><summary>Is my data safe?</summary><p>Each dealership’s data is isolated, social tokens are encrypted, and we never sell your data. See our .</p></details>
+    </section>
+
+    <section class="l-cta">
+      <h2>Stop letting your socials go quiet.</h2>
+      <a class="btn primary big" href="app.html">Start your free trial</a>
+    </section>
+
+    <footer class="l-footer">
+      <span>© <span id="year"></span> Dealer Social</span>
+      <a href="app.html">Log in</a>
+    </footer>
+    <script src="mock-api.js" charset="utf-8"></script>
+    <script type="module" src="landing.js"></script>
+  
+</div>
