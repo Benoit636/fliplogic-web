@@ -104,7 +104,7 @@ but can't take payment yet, and emails are printed to the console. Each key you 
 
 Pick one:
 
-- **Render:** once this folder is its own repository, `render.yaml` is a ready-made Blueprint (Docker, a persistent disk, a health check and a generated `APP_SECRET`).
+- **Render:** follow [`docs/DEPLOY.md`](docs/DEPLOY.md) (about 30 minutes, step by step). Once this folder is its own repository, `render.yaml` is a ready-made Blueprint (Docker, a persistent disk, a health check and a generated `APP_SECRET`).
 - **Any VPS:** `docker compose up -d`, with Caddy or Nginx in front for HTTPS.
 - **Any Node host:** `npm ci --omit=dev && NODE_ENV=production npm start`, with `DATABASE_PATH` on persistent storage.
 
