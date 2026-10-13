@@ -1,0 +1,4 @@
+Stock #,VIN,Year,Make,Model,Trim,Mileage,Price,New/Used,Exterior Color,Features,Photos
+V24001,3VV2B7AX5RM000001,2024,Volkswagen,Tiguan,Comfortline 4MOTION,12,"$39,995",New,Pure White,"Heated seats, Apple CarPlay, adaptive cruise",https://example.com/photos/v24001-1.jpg|https://example.com/photos/v24001-2.jpg
+U22017,1VWSA7A39NC000002,2022,Volkswagen,Jetta,Highline,41250,"$27,495",Used,Platinum Grey,"Sunroof, leather, digital cockpit",https://example.com/photos/u22017-1.jpg
+U21033,2T3P1RFV5MC000003,2021,Toyota,RAV4,LE AWD,58900,"$29,900",Used,Blueprint,"AWD, backup camera",

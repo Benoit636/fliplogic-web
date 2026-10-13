@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dealer Social — Legal</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <!--
+    TEMPLATE: replace every [BRACKETED] value and have a lawyer review these policies before launch
+    (Canada: PIPEDA / Quebec Law 25 / CASL; US: state privacy laws). Meta, Google and TikTok app review
+    require a public privacy policy and data-deletion instructions at these URLs.
+  -->
+  <body class="landing">
+    <header class="l-nav">
+      <a class="l-brand" href="/"><span class="brand-mark">DS</span> Dealer Social</a>
+      <nav><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/data-deletion">Data deletion</a><a class="btn primary" href="/signup">Start free trial</a></nav>
+    </header>
+    <main class="l-section legal">
+      <article id="privacy">
+        <h1>Privacy Policy</h1>
+        <p class="muted">Last updated: [DATE]. Dealer Social is operated by [COMPANY LEGAL NAME], [ADDRESS] (“we”, “us”).</p>
+        <h2>What we collect</h2>
+        <ul>
+          <li><strong>Account data</strong>: names, work emails and hashed passwords of dealership users.</li>
+          <li><strong>Dealership content</strong>: your profile, vehicle inventory, posts, schedules and analytics.</li>
+          <li><strong>Connected social accounts</strong>: page/account IDs and access tokens you authorize (encrypted at rest), and the public comments, messages and reviews those networks share with us so we can show them in your inbox.</li>
+          <li><strong>Billing</strong>: handled by Stripe; we store only your Stripe customer and subscription IDs, never card numbers.</li>
+        </ul>
+        <h2>How we use it</h2>
+        <p>Only to provide the service: generating, scheduling and publishing your posts, triaging your inbox, reporting analytics, billing and support. Text you submit may be processed by our AI provider (Anthropic) to write posts and replies; it is not used to train their models under our commercial terms. We do not sell personal information.</p>
+        <h2>Sharing</h2>
+        <p>With the social networks you connect (to publish on your behalf), our infrastructure, email and payment processors, and AI provider, each under contract. We disclose data if required by law.</p>
+        <h2>Retention &amp; deletion</h2>
+        <p>We keep your data while your account is active and delete it within 30 days of a verified deletion request (see <a href="/data-deletion">Data deletion</a>). Backups roll off within 14 days.</p>
+        <h2>Your rights</h2>
+        <p>You can access, correct, export or delete your data. Contact [PRIVACY EMAIL].</p>
+      </article>
+      <hr />
+      <article id="terms">
+        <h1>Terms of Service</h1>
+        <p class="muted">Last updated: [DATE]</p>
+        <ol>
+          <li><strong>The service.</strong> Dealer Social provides software to create, schedule and publish social media content and manage engagement for automotive dealerships.</li>
+          <li><strong>Accounts.</strong> You are responsible for your users, their access, and content published from your account, including content you approve or allow autopilot to publish.</li>
+          <li><strong>Subscriptions.</strong> Plans are billed monthly or yearly in advance per dealership. Free trials convert only when you choose a plan. You can cancel anytime; access continues until the end of the paid period. Fees are non-refundable except where required by law.</li>
+          <li><strong>Acceptable use.</strong> No unlawful, misleading or discriminatory advertising. You are responsible for advertising compliance (pricing disclosures, OEM co-op rules, consumer-protection law) in your jurisdiction.</li>
+          <li><strong>AI output.</strong> AI-generated content can contain errors. Review content before publishing; Assist mode is provided for this purpose.</li>
+          <li><strong>Third-party platforms.</strong> Publishing depends on Meta, Google, LinkedIn, X and TikTok APIs and their terms, which may change or limit functionality.</li>
+          <li><strong>Liability.</strong> To the extent permitted by law, our total liability is limited to the fees you paid in the 12 months before the claim.</li>
+          <li><strong>Governing law.</strong> [PROVINCE/STATE, COUNTRY].</li>
+        </ol>
+      </article>
+      <hr />
+      <article id="data-deletion">
+        <h1>Data deletion</h1>
+        <p>To delete your dealership’s data (including data received from Facebook, Instagram, Google, LinkedIn, X or TikTok):</p>
+        <ol>
+          <li>Disconnect the account under <em>Settings → Social accounts</em> — this deletes its stored tokens immediately.</li>
+          <li>Email [PRIVACY EMAIL] from an owner address asking to delete your dealership. We confirm and delete within 30 days.</li>
+        </ol>
+        <p>You can also remove the Dealer Social app from your Facebook settings under <em>Apps and Websites</em>.</p>
+      </article>
+    </main>
+    <script type="module" src="legal.js"></script>
+    <footer class="l-footer"><a href="/">Home</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/data-deletion">Data deletion</a></footer>
+  </body>
+</html>
