@@ -1,7 +1,7 @@
 // In-browser stand-in for the Dealer Social server, so the real dashboard can be tried with
 // sample data and no account. It answers the same /api routes; nothing leaves the browser.
 (function () {
-  const STORE_KEY = 'dealer-social-demo-v2';
+  const STORE_KEY = 'dealer-social-demo-v3';
   // Same goals, fields and template copy as the real server.
   let OBJ = null;
   const objectivesReady = import('./shared/objectives.js').then((m) => {
@@ -74,7 +74,7 @@
   function seed() {
     const t = now();
     const d = {
-      id: 1, name: 'Riverside Motors', brands: 'Volkswagen, pre-owned all makes', website: 'https://www.example-dealer.com',
+      id: 1, dealer_number: '001', province: 'NB', postal_code: '', logo_url: '', brand_color: '', accent_color: '', name: 'Riverside Motors', brands: 'Volkswagen, pre-owned all makes', website: 'https://www.example-dealer.com',
       phone: '(506) 555-0123', address: '123 Main Street', city: 'Moncton, NB',
       brand_voice: 'Warm, upbeat and neighbourly. Proudly local. Straight talk, no pressure. A little playful with emojis on Instagram and TikTok.',
       default_hashtags: '#RiversideMotors #Moncton', call_to_action: 'Book your test drive today — call us or send a DM!',
@@ -115,8 +115,8 @@
       ],
       team: {
         members: [
-          { id: 1, email: 'demo@riverside.example', name: 'Demo Manager', role: 'owner', last_login_at: iso(t) },
-          { id: 2, email: 'sam@riverside.example', name: 'Sam Leger', role: 'manager', last_login_at: iso(t - 2 * DAY) },
+          { id: 1, email: 'demo@riverside.example', name: 'Demo Manager', role: 'admin', last_login_at: iso(t) },
+          { id: 2, email: 'sam@riverside.example', name: 'Sam Leger', role: 'admin', last_login_at: iso(t - 2 * DAY) },
           { id: 3, email: 'rep@riverside.example', name: 'Julie Cormier', role: 'staff', last_login_at: iso(t - 5 * DAY) },
         ],
         invites: [],
@@ -448,9 +448,9 @@
   function me() {
     const d = state.dealership;
     return {
-      user: { id: 1, email: 'demo@riverside.example', name: 'Demo Manager', is_superadmin: false }, role: 'owner',
-      dealership: { id: 1, name: d.name, plan: d.plan, subscription_status: d.subscription_status, trial_ends_at: d.trial_ends_at, entitlements: entitlements() },
-      dealerships: [{ id: 1, name: d.name, role: 'owner' }], product_name: 'Dealer Social',
+      user: { id: 1, email: 'demo@riverside.example', name: 'Demo Manager', is_superadmin: false }, role: 'admin', role_label: 'Dealer Admin', can_add_dealership: false,
+      dealership: { id: 1, dealer_number: d.dealer_number, name: d.name, logo_url: d.logo_url, plan: d.plan, subscription_status: d.subscription_status, trial_ends_at: d.trial_ends_at, entitlements: entitlements() },
+      dealerships: [{ id: 1, name: d.name, role: 'admin' }], product_name: 'Dealer Social',
     };
   }
 
@@ -576,7 +576,7 @@
         general_post_types: ['promotion', 'event', 'service_tip', 'review_highlight', 'holiday', 'engagement', 'team_spotlight', 'custom'],
         objectives: OBJ.OBJECTIVES, fields: OBJ.FIELDS,
         oauth: { meta: { label: 'Facebook & Instagram', platforms: ['facebook', 'instagram'], configured: true }, google: { label: 'Google Business Profile', platforms: ['google_business'], configured: true }, linkedin: { label: 'LinkedIn', platforms: ['linkedin'], configured: true }, x: { label: 'X (Twitter)', platforms: ['x'], configured: true }, tiktok: { label: 'TikTok', platforms: ['tiktok'], configured: true } },
-        billing_enabled: true, plans: PLANS, role: 'owner', user: me().user, product_name: 'Dealer Social', support_email: 'support@example.com' };
+        billing_enabled: true, plans: PLANS, role: 'admin', user: me().user, product_name: 'Dealer Social', support_email: 'support@example.com' };
     if (a === 'dashboard') {
       const t = iso(now());
       return {
@@ -589,6 +589,22 @@
       };
     }
     if (a === 'activity') return state.activity;
+    if (a === 'dealership' && b === 'logo') {
+      if (method === 'DELETE') {
+        d.logo_url = '';
+        return d;
+      }
+      if (!(body instanceof Blob) || !/^image\/(png|jpeg|webp)$/.test(body.type)) throw err(400, 'Upload a JPG, PNG or WebP logo');
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          d.logo_url = reader.result;
+          save();
+          resolve(d);
+        };
+        reader.readAsDataURL(body);
+      });
+    }
     if (a === 'dealership') {
       if (method === 'PUT') {
         if (body.autonomy === 'autopilot' && !PLANS[d.plan].features.autopilot) throw err(402, 'Full autopilot is available on the Pro plan and above');

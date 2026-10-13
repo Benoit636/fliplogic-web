@@ -74,7 +74,7 @@ tenantTest('signup, login, password reset and invites', async (a) => {
   const { token } = auth.login({ email: 'OWNER@test.example', password: 'password123' });
   const session = auth.getSession(token);
   assert.equal(session.dealershipId, a.dealership.id);
-  assert.equal(session.role, 'owner');
+  assert.equal(session.role, 'admin');
 
   await auth.requestPasswordReset('owner@test.example');
   const resetToken = outbox.at(-1).text.match(/token=([\w-]+)/)[1];
@@ -89,7 +89,7 @@ tenantTest('signup, login, password reset and invites', async (a) => {
   const repSession = auth.getSession(accepted.token);
   assert.equal(repSession.role, 'staff');
   assert.equal(repSession.dealershipId, a.dealership.id);
-  assert.throws(() => auth.removeMember(a.dealership.id, a.user.id), /at least one owner/);
+  assert.throws(() => auth.removeMember(a.dealership.id, a.user.id), /at least one Dealer Admin/);
 });
 
 tenantTest('Stripe webhooks keep the subscription in sync (idempotently)', async (a) => {

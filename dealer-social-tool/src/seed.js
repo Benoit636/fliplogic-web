@@ -1,5 +1,7 @@
-// Loads a demo dealership so you can explore every screen: `npm run seed`
-// Log in with demo@example.com / demo12345
+// Loads a demo dealership so you can explore every screen on your own computer: `npm run seed`
+// The demo password is random (printed once) unless you set DEMO_PASSWORD. Never run this on a real server.
+import crypto from 'node:crypto';
+import { config, isProduction } from './config.js';
 import { openDb, run } from './db.js';
 import { runWithTenant } from './tenant.js';
 import { signup, getUserByEmail } from './services/auth.js';
@@ -8,10 +10,15 @@ import { createAccount } from './services/accounts.js';
 import { createVehicle } from './services/inventory.js';
 import { createRule } from './services/autopilot.js';
 
+if (isProduction) {
+  console.error('npm run seed loads fake demo data and is disabled in production. Use npm run create-dealer instead.');
+  process.exit(1);
+}
 openDb();
 
 const DEMO_EMAIL = process.env.DEMO_EMAIL || 'demo@example.com';
-const DEMO_PASSWORD = process.env.DEMO_PASSWORD || 'demo12345';
+const DEMO_PASSWORD = process.env.DEMO_PASSWORD || crypto.randomBytes(9).toString('base64url');
+config.allowSignup = true; // local demo data only
 if (getUserByEmail(DEMO_EMAIL)) {
   console.log(`${DEMO_EMAIL} already exists — skipping seed.`);
   process.exit(0);

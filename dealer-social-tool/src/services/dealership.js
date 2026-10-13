@@ -23,7 +23,23 @@ const EDITABLE = [
   'inventory_feed_url',
   'feed_marks_sold',
   'crm_lead_email',
+  'province',
+  'postal_code',
+  'brand_color',
+  'accent_color',
 ];
+const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+const DEALER_NUMBER = /^\d{3,6}$/;
+
+export function getDealershipByNumber(number) {
+  return get('SELECT * FROM dealerships WHERE dealer_number = ?', String(number));
+}
+
+/** Dealer numbers are zero-padded and sequential: 001, 002, … */
+function nextDealerNumber() {
+  const max = get('SELECT MAX(CAST(dealer_number AS INTEGER)) AS n FROM dealerships').n || 0;
+  return String(max + 1).padStart(3, '0');
+}
 
 export function getDealershipById(id) {
   return get('SELECT * FROM dealerships WHERE id = ?', id);
@@ -34,12 +50,19 @@ export function getDealership() {
   return getDealershipById(tenantId());
 }
 
-export function createDealership({ name, timezone }) {
+export function createDealership({ name, timezone, dealerNumber }) {
   if (!name?.trim()) throw httpError(400, 'Dealership name is required');
+  let number = nextDealerNumber();
+  if (dealerNumber != null && dealerNumber !== '') {
+    number = String(dealerNumber).trim();
+    if (!DEALER_NUMBER.test(number)) throw httpError(400, 'Dealer number must be 3 to 6 digits, like 001');
+    if (getDealershipByNumber(number)) throw httpError(409, `Dealer #${number} already exists`);
+  }
   const trialEnds = new Date(Date.now() + config.trialDays * 86_400_000).toISOString();
   const { lastInsertRowid } = run(
-    `INSERT INTO dealerships (name, timezone, plan, subscription_status, status_changed_at, trial_ends_at)
-     VALUES (?, ?, ?, 'trialing', ?, ?)`,
+    `INSERT INTO dealerships (dealer_number, name, timezone, plan, subscription_status, status_changed_at, trial_ends_at)
+     VALUES (?, ?, ?, ?, 'trialing', ?, ?)`,
+    number,
     name.trim(),
     timezone && isValidTimeZone(timezone) ? timezone : 'America/Moncton',
     TRIAL_PLAN,
@@ -58,12 +81,24 @@ export function updateDealership(fields) {
   if (fields.timezone && !isValidTimeZone(fields.timezone)) throw httpError(400, 'Unknown time zone');
   if (fields.crm_lead_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fields.crm_lead_email)) throw httpError(400, 'CRM lead email is not a valid email address');
   if (fields.inventory_feed_url && !/^https?:\/\//i.test(fields.inventory_feed_url)) throw httpError(400, 'Feed URL must start with http(s)://');
+  if (fields.name !== undefined && !String(fields.name).trim()) throw httpError(400, 'Dealership name is required');
+  if (fields.website && !/^https?:\/\/[^\s]+\.[^\s]+$/i.test(fields.website)) throw httpError(400, 'Website must be a full address, like https://www.yourdealer.ca');
+  for (const key of ['brand_color', 'accent_color']) {
+    if (fields[key] && !HEX_COLOR.test(fields[key])) throw httpError(400, 'Brand colours must look like #001E50');
+  }
   if (fields.inventory_feed_url && !currentEntitlements().features.inventoryFeed) {
     throw httpError(402, 'Automatic inventory feeds are available on the Pro plan and above');
   }
   const patch = { ...fields };
   if (patch.feed_marks_sold !== undefined) patch.feed_marks_sold = patch.feed_marks_sold ? 1 : 0;
+  for (const key of EDITABLE) if (typeof patch[key] === 'string') patch[key] = patch[key].trim().slice(0, 2000);
   updateRow('dealerships', tenantId(), patch, EDITABLE, { tenant: false });
+  return getDealership();
+}
+
+/** Logo file already validated and stored by services/media.js ('' removes it). */
+export function setDealershipLogo(url) {
+  updateRow('dealerships', tenantId(), { logo_url: url || '' }, ['logo_url'], { tenant: false });
   return getDealership();
 }
 

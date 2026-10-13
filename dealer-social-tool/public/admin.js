@@ -42,6 +42,16 @@ async function render() {
         .map(([l, v, sub]) => `<div class="kpi"><div class="label">${l}</div><div class="value">${v}</div><div class="sub">${sub}</div></div>`)
         .join('')}
     </div>
+    <form class="card" id="new-dealer" style="margin-bottom:16px">
+      <div class="card-head"><h2>Add a dealership</h2><span class="small muted">Creates the dealership and a single-use setup link for its first Dealer Admin (valid 3 days). No passwords are shared.</span></div>
+      <div class="row">
+        <input name="name" placeholder="Dealership name" required style="flex:2;min-width:200px">
+        <input name="dealer_number" placeholder="Dealer # (auto)" inputmode="numeric" pattern="\\d{3,6}" style="flex:1;min-width:120px">
+        <input name="admin_email" type="email" placeholder="Admin email" required style="flex:2;min-width:200px">
+        <button class="primary">Create</button>
+      </div>
+      <div id="new-dealer-link" class="small" style="margin-top:8px"></div>
+    </form>
     <div class="card">
       <div class="card-head"><h2>Customers</h2><input id="search" placeholder="Search dealership, owner, city…" value="${esc(filter)}" style="max-width:320px;margin-left:auto"></div>
       <div class="table-wrap"><table>
@@ -50,7 +60,7 @@ async function render() {
           rows
             .map(
               (d) => `<tr>
-          <td><strong>${esc(d.name)}</strong><div class="small muted">#${d.id} · ${esc(d.city || '')} · since ${date(d.created_at)}</div></td>
+          <td><strong>${esc(d.name)}</strong><div class="small muted">Dealer #${esc(d.dealer_number || d.id)} · ${esc(d.city || '')} · since ${date(d.created_at)}</div></td>
           <td class="small">${esc(d.owner_email || '—')}</td>
           <td>${esc(d.plan)}${d.billing_interval === 'year' ? ' <span class="badge">yearly</span>' : ''}</td>
           <td><span class="badge ${STATUS_CLASS[d.subscription_status] || ''}">${esc(d.subscription_status)}</span></td>
@@ -63,6 +73,7 @@ async function render() {
           <td class="small">${date(d.last_user_activity)}</td>
           <td><div class="row" style="flex-wrap:nowrap">
             <button class="small" data-open="${d.id}">Open</button>
+            <button class="small" data-admin-link="${esc(d.dealer_number)}">Admin link</button>
             <button class="small" data-trial="${d.id}">+14d trial</button>
             <button class="small" data-edit="${d.id}" data-plan="${esc(d.plan)}" data-status="${esc(d.subscription_status)}">Plan…</button>
           </div></td></tr>`,
@@ -72,6 +83,16 @@ async function render() {
       </table></div>
       <p class="small muted">“Plan…” overrides are for pilots, comped accounts and sales-led deals. Stripe-billed changes should be made in Stripe; webhooks keep this table in sync.</p>
     </div>`;
+  document.getElementById('new-dealer').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const r = await api('POST', '/dealerships', Object.fromEntries(new FormData(e.target)));
+      await render();
+      showLink(`Dealer #${r.dealership.dealer_number} ${r.dealership.name} created. Send this setup link to the admin only:`, r.invite_url);
+    } catch (err) {
+      toast(err.message, true);
+    }
+  };
   const search = document.getElementById('search');
   search.oninput = () => {
     filter = search.value.toLowerCase();
@@ -83,6 +104,12 @@ async function render() {
   };
 }
 
+function showLink(text, url) {
+  const box = document.getElementById('new-dealer-link');
+  box.innerHTML = `${esc(text)} <input readonly value="${esc(url)}" style="margin-top:4px">`;
+  box.querySelector('input').select();
+}
+
 view.addEventListener('click', async (e) => {
   const b = e.target.closest('button');
   if (!b) return;
@@ -90,6 +117,13 @@ view.addEventListener('click', async (e) => {
     if (b.dataset.open) {
       await api('POST', `/dealerships/${b.dataset.open}/open`);
       location.href = '/app#/dashboard';
+    }
+    if (b.dataset.adminLink) {
+      const email = prompt(`Email of the Dealer Admin for dealer #${b.dataset.adminLink}:`);
+      if (!email) return;
+      const r = await api('POST', `/dealerships/${encodeURIComponent(b.dataset.adminLink)}/admin-invite`, { admin_email: email.trim() });
+      showLink(`Single-use setup link for ${email.trim()}:`, r.invite_url);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
     if (b.dataset.trial) {
       await api('PATCH', `/dealerships/${b.dataset.trial}`, { extend_trial_days: 14 });

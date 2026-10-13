@@ -36,6 +36,11 @@ function form(html, onSubmit) {
 const field = (name, label, type = 'text', extra = '') =>
   `<label class="field"><span>${label}</span><input name="${name}" type="${type}" ${extra} required></label>`;
 
+// Self-serve signup can be switched off (pilot): staff then join by invite only.
+const publicConfig = fetch('/api/public/plans')
+  .then((r) => r.json())
+  .catch(() => ({ signup_open: false }));
+
 const pages = {
   '/login': () =>
     form(
@@ -46,7 +51,7 @@ const pages = {
         <div class="form-error"></div>
         <button class="primary" type="submit">Log in</button>
       </form>
-      <p class="small"><a href="/forgot">Forgot your password?</a> · New here? <a href="/signup">Start a free trial</a></p>`,
+      <p class="small"><a href="/forgot">Forgot your password?</a> · <span id="new-here">New here? Ask your Dealer Admin for an invite.</span></p>`,
       async (d) => {
         await post('login', d);
         const next = params.get('next') || '';
@@ -54,7 +59,11 @@ const pages = {
       },
     ),
 
-  '/signup': () => {
+  '/signup': async () => {
+    if (!(await publicConfig).signup_open) {
+      view.innerHTML = `<h1>Invitation only</h1><p class="muted">Each person at a dealership gets their own login. Ask your Dealer Admin to invite you from <strong>More tools → Team</strong>. The invite email has a link to set your password.</p><p><a href="/login">Back to log in</a></p>`;
+      return;
+    }
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     form(
       `<h1>Start your free trial</h1>
@@ -63,7 +72,7 @@ const pages = {
         ${field('dealership_name', 'Dealership name', 'text', 'placeholder="Riverside Motors" autofocus')}
         ${field('name', 'Your name', 'text', 'autocomplete="name"')}
         ${field('email', 'Work email', 'email', 'autocomplete="email"')}
-        ${field('password', 'Password (8+ characters)', 'password', 'autocomplete="new-password" minlength="8"')}
+        ${field('password', 'Password (10+ characters)', 'password', 'autocomplete="new-password" minlength="10"')}
         <input type="hidden" name="timezone" value="${esc(tz)}">
         <div class="form-error"></div>
         <button class="primary" type="submit">Create my account</button>
@@ -99,7 +108,7 @@ const pages = {
     form(
       `<h1>Choose a new password</h1>
       <form class="stack">
-        ${field('password', 'New password (8+ characters)', 'password', 'autocomplete="new-password" minlength="8" autofocus')}
+        ${field('password', 'New password (10+ characters)', 'password', 'autocomplete="new-password" minlength="10" autofocus')}
         <div class="form-error"></div>
         <button class="primary" type="submit">Save and log in</button>
       </form>`,
@@ -123,17 +132,17 @@ const pages = {
     };
     if (info.logged_in_as && info.logged_in_as.toLowerCase() === info.email.toLowerCase()) {
       return form(
-        `<h1>Join ${esc(info.dealership_name)}</h1><p>You'll join as <strong>${esc(info.role)}</strong>.</p>
+        `<h1>Join ${esc(info.dealership_name)}</h1><p>You'll join as <strong>${esc(info.role_label)}</strong>.</p>
         <form class="stack"><div class="form-error"></div><button class="primary" type="submit">Accept invite</button></form>`,
         accept,
       );
     }
     form(
       `<h1>Join ${esc(info.dealership_name)}</h1>
-      <p class="muted">You've been invited as <strong>${esc(info.role)}</strong> (${esc(info.email)}).</p>
+      <p class="muted">You've been invited as <strong>${esc(info.role_label)}</strong> (${esc(info.email)}). This link works once.</p>
       <form class="stack">
         ${info.existing_user ? '' : field('name', 'Your name')}
-        ${field('password', info.existing_user ? 'Your existing password' : 'Choose a password (8+ characters)', 'password', 'minlength="8"')}
+        ${info.existing_user ? field('password', 'Your existing password', 'password', 'autocomplete="current-password"') : field('password', 'Choose your own password (10+ characters)', 'password', 'autocomplete="new-password" minlength="10"')}
         <div class="form-error"></div>
         <button class="primary" type="submit">Accept invite</button>
       </form>`,
@@ -143,3 +152,7 @@ const pages = {
 };
 
 (pages[location.pathname] || pages['/login'])();
+publicConfig.then((c) => {
+  const el = document.getElementById('new-here');
+  if (el && c.signup_open) el.innerHTML = 'New here? <a href="/signup">Start a free trial</a>';
+});

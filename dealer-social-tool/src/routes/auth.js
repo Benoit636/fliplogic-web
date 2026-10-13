@@ -13,6 +13,7 @@ import {
   addDealershipForUser,
   changePassword,
   throttle,
+  ROLE_LABELS,
 } from '../services/auth.js';
 import { getDealershipById } from '../services/dealership.js';
 import { entitlements } from '../plans.js';
@@ -69,6 +70,7 @@ authRoutes.get('/invite/:token', (req, res) => {
   res.json({
     email: invite.email,
     role: invite.role,
+    role_label: ROLE_LABELS[invite.role] || invite.role,
     dealership_name: dealershipName,
     existing_user: existingUser,
     logged_in_as: req.session?.user?.email || null,
@@ -76,6 +78,7 @@ authRoutes.get('/invite/:token', (req, res) => {
 });
 
 authRoutes.post('/invite/:token/accept', (req, res) => {
+  throttle(`invite:${req.ip}`, 30);
   const { token } = acceptInvite(req.params.token, { name: req.body?.name, password: req.body?.password, sessionUser: req.session?.user });
   setSessionCookie(res, token);
   res.json({ ok: true });
@@ -91,9 +94,14 @@ meRoutes.get('/', (req, res) => {
   res.json({
     user: req.session.user,
     role: req.session.role,
+    role_label: ROLE_LABELS[req.session.role] || '',
+    can_add_dealership: config.allowSignup || req.session.user.is_superadmin,
     dealership: d && {
       id: d.id,
+      dealer_number: d.dealer_number,
       name: d.name,
+      logo_url: d.logo_url,
+      brand_color: d.brand_color,
       plan: d.plan,
       subscription_status: d.subscription_status,
       trial_ends_at: d.trial_ends_at,
@@ -110,12 +118,13 @@ meRoutes.post('/switch', (req, res) => {
 });
 
 meRoutes.post('/dealerships', (req, res) => {
-  const d = addDealershipForUser(req.session.user.id, { name: req.body?.name, timezone: req.body?.timezone });
+  const d = addDealershipForUser(req.session.user, { name: req.body?.name, timezone: req.body?.timezone });
   switchDealership(req.session, d.id);
   res.status(201).json({ id: d.id, name: d.name });
 });
 
 meRoutes.post('/password', (req, res) => {
-  changePassword(req.session.user.id, req.body?.current_password, req.body?.new_password);
+  throttle(`password:${req.session.user.id}`, 10);
+  changePassword(req.session.user.id, req.body?.current_password, req.body?.new_password, req.session.tokenHash);
   res.json({ ok: true });
 });

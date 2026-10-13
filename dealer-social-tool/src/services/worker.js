@@ -47,7 +47,7 @@ async function sendTrialReminders() {
   for (const { id } of rows) {
     if (get(`SELECT 1 FROM activity_log WHERE dealership_id = ? AND action = 'billing.trial_reminder'`, id)) continue;
     const owner = get(
-      `SELECT u.email, u.name FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.dealership_id = ? AND m.role = 'owner' ORDER BY m.created_at LIMIT 1`,
+      `SELECT u.email, u.name FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.dealership_id = ? AND m.role = 'admin' ORDER BY m.created_at LIMIT 1`,
       id,
     );
     const d = getDealershipById(id);

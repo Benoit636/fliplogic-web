@@ -40,7 +40,7 @@ export async function sendMonthlyReports(now = new Date()) {
       const since = new Date(now - 30 * 86_400_000).toISOString();
       const leads = get('SELECT COUNT(*) AS c FROM inbox_messages WHERE dealership_id = ? AND is_lead = 1 AND received_at >= ?', id, since).c;
       const recipients = all(
-        `SELECT u.email FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.dealership_id = ? AND m.role IN ('owner', 'manager')`,
+        `SELECT u.email FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.dealership_id = ? AND m.role = 'admin'`,
         id,
       );
       for (const r of recipients) {

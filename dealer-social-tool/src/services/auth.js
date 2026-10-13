@@ -8,15 +8,22 @@ import { sendEmail } from './mailer.js';
 import { httpError } from './errors.js';
 
 const SESSION_DAYS = 30;
-const ROLES = ['owner', 'manager', 'staff'];
+const MIN_PASSWORD = 10;
+const INVITE_DAYS = 7;
+export const ROLES = ['admin', 'staff'];
+export const ROLE_LABELS = { admin: 'Dealer Admin', staff: 'Dealer Staff' };
+// Older builds had owner/manager/staff; both senior roles are now Dealer Admin.
+const normaliseRole = (role) => (role === 'owner' || role === 'manager' ? 'admin' : role);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const publicUser = (u) => u && { id: u.id, email: u.email, name: u.name, is_superadmin: isSuperadmin(u) };
 
 export const isSuperadmin = (user) => !!user && config.superadminEmails.includes(String(user.email).toLowerCase());
 
-function checkPassword(password) {
-  if (typeof password !== 'string' || password.length < 8) throw httpError(400, 'Password must be at least 8 characters');
+function checkPassword(password, email = '') {
+  if (typeof password !== 'string' || password.length < MIN_PASSWORD) throw httpError(400, `Password must be at least ${MIN_PASSWORD} characters`);
+  if (password.length > 200) throw httpError(400, 'Password is too long');
+  if (email && password.toLowerCase().includes(String(email).split('@')[0].toLowerCase())) throw httpError(400, "Password can't contain your email name");
 }
 
 function checkEmail(email) {
@@ -29,7 +36,7 @@ export function getUserByEmail(email) {
 
 function createUser({ email, name, password }) {
   checkEmail(email);
-  checkPassword(password);
+  checkPassword(password, email);
   if (getUserByEmail(email)) throw httpError(409, 'An account with this email already exists — log in instead');
   const { lastInsertRowid } = run('INSERT INTO users (email, name, password_hash) VALUES (?, ?, ?)', email.trim(), (name || '').trim(), hashPassword(password));
   return get('SELECT * FROM users WHERE id = ?', Number(lastInsertRowid));
@@ -63,7 +70,7 @@ export function getSession(token) {
   }
   // Superadmins may open any dealership for support.
   const dealershipId = membership?.dealership_id ?? (isSuperadmin(user) ? s.dealership_id : null);
-  return { tokenHash: s.token_hash, user: publicUser(user), dealershipId, role: membership?.role || (isSuperadmin(user) && dealershipId ? 'owner' : null) };
+  return { tokenHash: s.token_hash, user: publicUser(user), dealershipId, role: membership?.role || (isSuperadmin(user) && dealershipId ? 'admin' : null) };
 }
 
 export function destroySession(token) {
@@ -83,11 +90,12 @@ export function listUserDealerships(userId) {
 }
 
 export function signup({ name, email, password, dealershipName, timezone }) {
+  if (!config.allowSignup) throw httpError(403, 'New dealerships are set up by invitation. Ask your dealership admin for an invite.');
   if (!dealershipName?.trim()) throw httpError(400, 'Dealership name is required');
   const { user, dealership } = transaction(() => {
     const user = createUser({ email, name, password });
     const dealership = createDealership({ name: dealershipName, timezone });
-    run('INSERT INTO memberships (user_id, dealership_id, role) VALUES (?, ?, ?)', user.id, dealership.id, 'owner');
+    run('INSERT INTO memberships (user_id, dealership_id, role) VALUES (?, ?, ?)', user.id, dealership.id, 'admin');
     return { user, dealership };
   });
   sendEmail({
@@ -101,10 +109,11 @@ export function signup({ name, email, password, dealershipName, timezone }) {
 }
 
 /** Add another rooftop for an existing user (dealer groups). */
-export function addDealershipForUser(userId, { name, timezone }) {
+export function addDealershipForUser(user, { name, timezone }) {
+  if (!config.allowSignup && !user.is_superadmin) throw httpError(403, 'New dealerships are set up by the platform administrator');
   return transaction(() => {
     const dealership = createDealership({ name, timezone });
-    run('INSERT INTO memberships (user_id, dealership_id, role) VALUES (?, ?, ?)', userId, dealership.id, 'owner');
+    run('INSERT INTO memberships (user_id, dealership_id, role) VALUES (?, ?, ?)', user.id, dealership.id, 'admin');
     return dealership;
   });
 }
@@ -144,9 +153,9 @@ export async function requestPasswordReset(email) {
 }
 
 export function resetPassword(token, password) {
-  checkPassword(password);
   const row = get('SELECT * FROM password_resets WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?', sha256(token || ''), nowIso());
   if (!row) throw httpError(400, 'This reset link is invalid or has expired');
+  checkPassword(password, get('SELECT email FROM users WHERE id = ?', row.user_id)?.email);
   transaction(() => {
     run('UPDATE users SET password_hash = ? WHERE id = ?', hashPassword(password), row.user_id);
     run('UPDATE password_resets SET used_at = ? WHERE token_hash = ?', nowIso(), row.token_hash);
@@ -155,11 +164,14 @@ export function resetPassword(token, password) {
   return { token: createSession(row.user_id) };
 }
 
-export function changePassword(userId, current, next) {
+export function changePassword(userId, current, next, keepTokenHash) {
   const user = get('SELECT * FROM users WHERE id = ?', userId);
   if (!verifyPassword(String(current || ''), user.password_hash)) throw httpError(400, 'Current password is incorrect');
-  checkPassword(next);
-  run('UPDATE users SET password_hash = ? WHERE id = ?', hashPassword(next), userId);
+  checkPassword(next, user.email);
+  transaction(() => {
+    run('UPDATE users SET password_hash = ? WHERE id = ?', hashPassword(next), userId);
+    run('DELETE FROM sessions WHERE user_id = ? AND token_hash != ?', userId, keepTokenHash || ''); // sign out other devices
+  });
 }
 
 // ---- team ----
@@ -178,32 +190,46 @@ export function listTeam(dealershipId) {
   return { members, invites };
 }
 
+/**
+ * One-time, single-use invite link (only its hash is stored). Each person gets their own login:
+ * they choose their own password when they accept. Re-inviting an email replaces its old link.
+ */
+export function createInvite(dealershipId, { email, role = 'staff', invitedBy = null, days = INVITE_DAYS }) {
+  checkEmail(email);
+  role = normaliseRole(role);
+  if (!ROLES.includes(role)) throw httpError(400, 'Role must be Dealer Admin or Dealer Staff');
+  const token = randomToken();
+  transaction(() => {
+    run('DELETE FROM invites WHERE dealership_id = ? AND email = ? AND accepted_at IS NULL', dealershipId, email.trim());
+    run(
+      'INSERT INTO invites (dealership_id, email, role, token_hash, invited_by, expires_at) VALUES (?, ?, ?, ?, ?, ?)',
+      dealershipId,
+      email.trim(),
+      role,
+      sha256(token),
+      invitedBy,
+      new Date(Date.now() + days * 86_400_000).toISOString(),
+    );
+  });
+  return { invite_url: `${config.appUrl}/invite?token=${token}`, role, expires_in_days: days };
+}
+
 export async function inviteMember(dealershipId, inviter, { email, role = 'staff' }) {
   checkEmail(email);
-  if (!ROLES.includes(role)) throw httpError(400, 'Unknown role');
   const team = listTeam(dealershipId);
-  runWithTenant(dealershipId, () => requireRoom('users', team.members.length + team.invites.length, 'team members'));
-  if (team.members.some((m) => m.email.toLowerCase() === email.toLowerCase())) throw httpError(409, 'Already a member');
-  const token = randomToken();
-  run(
-    'INSERT INTO invites (dealership_id, email, role, token_hash, invited_by, expires_at) VALUES (?, ?, ?, ?, ?, ?)',
-    dealershipId,
-    email.trim(),
-    role,
-    sha256(token),
-    inviter.id,
-    new Date(Date.now() + 7 * 86_400_000).toISOString(),
-  );
+  const pendingOthers = team.invites.filter((i) => i.email.toLowerCase() !== String(email).trim().toLowerCase()).length;
+  runWithTenant(dealershipId, () => requireRoom('users', team.members.length + pendingOthers, 'team members'));
+  if (team.members.some((m) => m.email.toLowerCase() === email.trim().toLowerCase())) throw httpError(409, 'Already a member');
+  const invite = createInvite(dealershipId, { email, role, invitedBy: inviter.id });
   const dealer = getDealershipById(dealershipId);
-  const url = `${config.appUrl}/invite?token=${token}`;
   const { delivered } = await sendEmail({
     to: email,
     subject: `${inviter.name || inviter.email} invited you to ${dealer.name} on ${config.productName}`,
-    text: `You've been invited to help manage ${dealer.name}'s social media as ${role}. The invite is valid for 7 days.`,
-    actionUrl: url,
+    text: `You've been invited to ${dealer.name} on ${config.productName} as ${ROLE_LABELS[invite.role]}. Choose your own password when you accept. The invite is valid for ${invite.expires_in_days} days and works once.`,
+    actionUrl: invite.invite_url,
     actionLabel: 'Accept invite',
   });
-  return { invite_url: url, emailed: delivered };
+  return { invite_url: invite.invite_url, emailed: delivered };
 }
 
 export function inviteInfo(token) {
@@ -235,22 +261,24 @@ export function revokeInvite(dealershipId, inviteId) {
   run('DELETE FROM invites WHERE id = ? AND dealership_id = ?', inviteId, dealershipId);
 }
 
-function ownerCount(dealershipId) {
-  return get(`SELECT COUNT(*) AS n FROM memberships WHERE dealership_id = ? AND role = 'owner'`, dealershipId).n;
+function adminCount(dealershipId) {
+  return get(`SELECT COUNT(*) AS n FROM memberships WHERE dealership_id = ? AND role = 'admin'`, dealershipId).n;
 }
 
 export function changeRole(dealershipId, userId, role) {
-  if (!ROLES.includes(role)) throw httpError(400, 'Unknown role');
+  role = normaliseRole(role);
+  if (!ROLES.includes(role)) throw httpError(400, 'Role must be Dealer Admin or Dealer Staff');
   const m = get('SELECT * FROM memberships WHERE dealership_id = ? AND user_id = ?', dealershipId, userId);
   if (!m) throw httpError(404, 'Member not found');
-  if (m.role === 'owner' && role !== 'owner' && ownerCount(dealershipId) === 1) throw httpError(400, 'A dealership needs at least one owner');
+  if (m.role === 'admin' && role !== 'admin' && adminCount(dealershipId) === 1) throw httpError(400, 'A dealership needs at least one Dealer Admin');
   run('UPDATE memberships SET role = ? WHERE dealership_id = ? AND user_id = ?', role, dealershipId, userId);
 }
 
 export function removeMember(dealershipId, userId) {
   const m = get('SELECT * FROM memberships WHERE dealership_id = ? AND user_id = ?', dealershipId, userId);
   if (!m) throw httpError(404, 'Member not found');
-  if (m.role === 'owner' && ownerCount(dealershipId) === 1) throw httpError(400, 'A dealership needs at least one owner');
+  if (m.role === 'admin' && adminCount(dealershipId) === 1) throw httpError(400, 'A dealership needs at least one Dealer Admin');
   run('DELETE FROM memberships WHERE dealership_id = ? AND user_id = ?', dealershipId, userId);
+  // Their open sessions lose access straight away (getSession re-checks membership on every request).
   run('UPDATE sessions SET dealership_id = NULL WHERE user_id = ? AND dealership_id = ?', userId, dealershipId);
 }

@@ -36,6 +36,9 @@ export const config = {
   // Uploaded vehicle photos. They are served publicly at /media so Facebook/Instagram can fetch them.
   mediaDir: env.MEDIA_DIR || './data/media',
   trialDays: Number(env.TRIAL_DAYS || 14),
+  // Self-serve signup (anyone can create a dealership). Off in production unless ALLOW_SIGNUP=1:
+  // during the pilot, dealerships are created with `npm run create-dealer` and staff join by invite.
+  allowSignup: env.ALLOW_SIGNUP ? env.ALLOW_SIGNUP === '1' : env.NODE_ENV !== 'production',
 
   anthropicApiKey: env.ANTHROPIC_API_KEY || '',
   aiModel: env.AI_MODEL || 'claude-opus-5-5',

@@ -12,6 +12,9 @@ try {
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const num = (n) => Number(n || 0).toLocaleString();
 const money = (n) => (n == null ? '—' : `$${Number(n).toLocaleString()}`);
+const ROLE_LABELS = { admin: 'Dealer Admin', staff: 'Dealer Staff' };
+const roleLabel = (r) => ROLE_LABELS[r] || r;
+const isAdmin = () => state.me?.role === 'admin';
 const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—');
 const ago = (iso) => {
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -915,12 +918,26 @@ views.settings = async () => {
     type === 'textarea'
       ? `<label class="field full"><span>${l}</span><textarea name="${k}" rows="2" placeholder="${esc(ph)}">${esc(d[k])}</textarea></label>`
       : `<label class="field"><span>${l}</span><input name="${k}" value="${esc(d[k])}" placeholder="${esc(ph)}"></label>`;
+  const canEdit = isAdmin();
+  const color = (k, l) =>
+    `<label class="field"><span>${l}</span><div class="row" style="flex-wrap:nowrap"><input type="color" name="${k}" value="${esc(d[k] || '#0071e3')}" style="width:56px;height:42px;padding:4px"><span class="small muted">${esc(d[k] || 'Not set')}</span></div></label>`;
   view.innerHTML = `<div class="stack">
-    <form class="card" id="dealer-form"><div class="card-head"><h2>Dealership profile</h2><span class="muted small">The bot uses this for every post and reply.</span></div>
+    <form class="card" id="dealer-form"><div class="card-head"><h2>Dealership profile</h2><span class="badge">Dealer #${esc(d.dealer_number || '—')}</span><span class="muted small">Used on every post.${canEdit ? '' : ' Only a Dealer Admin can change it.'}</span></div>
+      <fieldset ${canEdit ? '' : 'disabled'} style="border:0;padding:0;margin:0;min-width:0">
+      <div class="logo-row">
+        <div class="logo-preview">${d.logo_url ? `<img src="${esc(d.logo_url)}" alt="${esc(d.name)} logo">` : '<span class="muted small">No logo</span>'}</div>
+        <div class="stack" style="gap:6px">
+          <strong>Logo</strong>
+          <span class="small muted">PNG with a transparent background works best. JPG and WebP are fine too.</span>
+          ${canEdit ? `<div class="row"><button type="button" class="small" id="logo-pick">${d.logo_url ? 'Replace logo' : 'Upload logo'}</button>${d.logo_url ? '<button type="button" class="small danger" id="logo-remove">Remove</button>' : ''}<input type="file" id="logo-input" accept="image/png,image/jpeg,image/webp" hidden></div>` : ''}
+        </div>
+      </div>
       <div class="form-grid">
         ${field('name', 'Dealership name')}${field('brands', 'Brands you sell', 'input', 'Volkswagen, pre-owned all makes')}
-        ${field('city', 'City', 'input', 'Moncton, NB')}${field('address', 'Address')}
-        ${field('phone', 'Phone')}${field('website', 'Website')}
+        ${field('address', 'Street address')}${field('city', 'City', 'input', 'Moncton')}
+        ${field('province', 'Province / state', 'input', 'NB')}${field('postal_code', 'Postal code', 'input', 'E1A 1A1')}
+        ${field('phone', 'Phone')}${field('website', 'Website', 'input', 'https://www.yourdealer.ca')}
+        ${color('brand_color', 'Main brand colour')}${color('accent_color', 'Accent colour')}
         ${field('brand_voice', 'Brand voice', 'textarea', 'Friendly, upbeat, community-focused…')}
         ${field('call_to_action', 'Default call to action')}${field('default_hashtags', 'Always-on hashtags', 'input', '#YourDealer #YourCity')}
         ${field('compliance_notes', 'Compliance / legal line (added when prices are shown)', 'textarea')}
@@ -931,8 +948,8 @@ views.settings = async () => {
         <label class="check full" style="border-radius:8px"><input type="checkbox" name="feed_marks_sold" value="1" ${d.feed_marks_sold ? 'checked' : ''}> Mark vehicles as sold when they disappear from the feed (creates “sold” celebration posts)</label>
         <label class="field full"><span>CRM lead email (leads from comments, DMs and reviews are forwarded in ADF/XML — the format your CRM already accepts)</span><input name="crm_lead_email" type="email" value="${esc(d.crm_lead_email || '')}" placeholder="leads@yourstore.crm-provider.com"></label>
         ${d.feed_last_synced_at ? `<div class="full small muted">Last feed sync ${ago(d.feed_last_synced_at)}: ${esc(d.feed_last_result)}</div>` : ''}
-        <div class="full row"><span class="spacer"></span><button class="primary">Save profile</button></div>
-      </div></form>
+        ${canEdit ? '<div class="full row"><span class="spacer"></span><button class="primary">Save profile</button></div>' : ''}
+      </div></fieldset></form>
     <div class="card"><div class="card-head"><h2>Connected accounts</h2><div class="actions"><button class="small" id="acct-add">Advanced: add manually</button></div></div>
       <div class="row" style="margin-bottom:10px">${Object.entries(state.meta.oauth)
         .map(
@@ -946,15 +963,33 @@ views.settings = async () => {
       </table></div></div>
     <form class="card" id="pw-form"><div class="card-head"><h2>Your password</h2></div><div class="form-grid">
       <label class="field"><span>Current password</span><input type="password" name="current_password" required autocomplete="current-password"></label>
-      <label class="field"><span>New password</span><input type="password" name="new_password" required minlength="8" autocomplete="new-password"></label>
+      <label class="field"><span>New password (10+ characters)</span><input type="password" name="new_password" required minlength="10" autocomplete="new-password"></label>
       <div class="full row"><span class="spacer"></span><button>Change password</button></div></div></form>
-    ${state.me?.role === 'owner' ? `<div class="card"><div class="card-head"><h2>Your data</h2><div class="actions"><button class="small" disabled title="Available in the full product">⬇ Export everything (JSON)</button></div></div><p class="small muted">Download your inventory, posts, inbox and settings at any time. To delete your dealership, email ${esc(state.meta.support_email)} from an owner address.</p></div>` : ''}</div>`;
+    ${isAdmin() ? `<div class="card"><div class="card-head"><h2>Your data</h2><div class="actions"><button class="small" disabled title="Available in the full product">⬇ Export everything (JSON)</button></div></div><p class="small muted">Download your inventory, posts, inbox and settings at any time. To delete your dealership, email ${esc(state.meta.support_email)} from a Dealer Admin address.</p></div>` : ''}</div>`;
   $('#dealer-form').onsubmit = (e) => {
     e.preventDefault();
     const body = Object.fromEntries(new FormData(e.target));
     body.feed_marks_sold = !!body.feed_marks_sold;
-    act(e.submitter, () => api('PUT', '/dealership', body), 'Profile saved').then(loadShell);
+    // Colour pickers always hold a value; only save the ones that were set or changed.
+    for (const k of ['brand_color', 'accent_color']) if (!d[k] && body[k] === '#0071e3') delete body[k];
+    act(e.submitter, () => api('PUT', '/dealership', body), 'Profile saved').then((r) => r && loadShell().then(route));
   };
+  if ($('#logo-pick')) {
+    $('#logo-pick').onclick = () => $('#logo-input').click();
+    $('#logo-input').onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const r = await act($('#logo-pick'), async () => {
+        const res = await fetch('/api/dealership/logo', { method: 'POST', headers: { 'content-type': file.type, 'x-requested-with': 'fetch' }, body: file });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(res.status === 413 ? 'That file is too big (10 MB max)' : data.error || 'Upload failed');
+        return data;
+      }, 'Logo saved');
+      if (r) loadShell().then(route);
+    };
+  }
+  if ($('#logo-remove'))
+    $('#logo-remove').onclick = () => confirm('Remove the logo?') && act($('#logo-remove'), () => api('DELETE', '/dealership/logo'), 'Logo removed').then((r) => r && loadShell().then(route));
   $('#pw-form').onsubmit = (e) => {
     e.preventDefault();
     act(
@@ -1013,13 +1048,13 @@ views.settings = async () => {
 
 views.team = async () => {
   const team = await api('GET', '/team');
-  const isOwner = state.me?.role === 'owner';
+  const isOwner = isAdmin();
   const roleSelect = (m) =>
     isOwner && m.id !== state.me.user.id
-      ? `<select data-role="${m.id}" style="width:auto">${['owner', 'manager', 'staff'].map((r) => `<option ${r === m.role ? 'selected' : ''}>${r}</option>`).join('')}</select>`
-      : `<span class="badge">${esc(m.role)}</span>`;
+      ? `<select data-role="${m.id}" style="width:auto">${Object.entries(ROLE_LABELS).map(([r, l]) => `<option value="${r}" ${r === m.role ? 'selected' : ''}>${l}</option>`).join('')}</select>`
+      : `<span class="badge ${m.role === 'admin' ? 'info' : ''}">${esc(roleLabel(m.role))}</span>`;
   view.innerHTML = `<div class="stack">
-    <div class="card"><div class="card-head"><h2>Team members</h2><span class="small muted">Owners manage billing & team · Managers approve, publish and configure · Staff draft posts and work the inbox</span></div>
+    <div class="card"><div class="card-head"><h2>Team members</h2><span class="small muted">Everyone has their own login. <strong>Dealer Admin</strong>: profile, team, inventory, approves and publishes posts. <strong>Dealer Staff</strong>: creates posts and sends them for approval.</span></div>
       <div class="table-wrap"><table><tr><th>Name</th><th>Email</th><th>Role</th><th>Last login</th><th></th></tr>
       ${team.members.map((m) => `<tr><td>${esc(m.name || '—')}</td><td>${esc(m.email)}</td><td>${roleSelect(m)}</td><td class="small">${m.last_login_at ? ago(m.last_login_at) : 'never'}</td><td>${isOwner && m.id !== state.me.user.id ? `<button class="small danger" data-remove="${m.id}">Remove</button>` : ''}</td></tr>`).join('')}
       </table></div></div>
@@ -1027,11 +1062,11 @@ views.team = async () => {
       isOwner
         ? `<form class="card" id="invite-form"><div class="card-head"><h2>Invite someone</h2></div><div class="row">
       <input type="email" name="email" placeholder="name@dealership.com" required style="flex:1;min-width:200px">
-      <select name="role" style="width:auto"><option value="staff">Staff</option><option value="manager">Manager</option><option value="owner">Owner</option></select>
-      <button class="primary">Send invite</button></div><div id="invite-link" class="small" style="margin-top:8px"></div></form>`
+      <select name="role" style="width:auto"><option value="staff">Dealer Staff</option><option value="admin">Dealer Admin</option></select>
+      <button class="primary">Send invite</button></div><p class="small muted" style="margin:8px 0 0">They get a single-use link (valid 7 days) and choose their own password. Never share passwords.</p><div id="invite-link" class="small" style="margin-top:8px"></div></form>`
         : ''
     }
-    ${team.invites.length ? `<div class="card"><div class="card-head"><h2>Pending invites</h2></div>${team.invites.map((i) => `<div class="list-item"><div class="grow">${esc(i.email)} <span class="badge">${esc(i.role)}</span><div class="small muted">expires ${fmtDate(i.expires_at)}</div></div>${isOwner ? `<button class="small" data-revoke="${i.id}">Revoke</button>` : ''}</div>`).join('')}</div>` : ''}
+    ${team.invites.length ? `<div class="card"><div class="card-head"><h2>Pending invites</h2></div>${team.invites.map((i) => `<div class="list-item"><div class="grow">${esc(i.email)} <span class="badge">${esc(roleLabel(i.role))}</span><div class="small muted">expires ${fmtDate(i.expires_at)}</div></div>${isOwner ? `<button class="small" data-revoke="${i.id}">Revoke</button>` : ''}</div>`).join('')}</div>` : ''}
   </div>`;
   const inviteForm = $('#invite-form');
   if (inviteForm)
@@ -1040,7 +1075,7 @@ views.team = async () => {
       const r = await act(e.submitter, () => api('POST', '/team/invites', Object.fromEntries(new FormData(e.target))));
       if (!r) return;
       toast(r.emailed ? 'Invite emailed' : 'Invite created');
-      $('#invite-link').innerHTML = `Share this link if the email doesn’t arrive: <input readonly value="${esc(r.invite_url)}" style="margin-top:4px">`;
+      $('#invite-link').innerHTML = `${r.emailed ? 'If the email doesn’t arrive, send' : 'Email is not set up yet, so send'} this link to that person only (it works once): <input readonly value="${esc(r.invite_url)}" style="margin-top:4px">`;
       setTimeout(route, r.emailed ? 0 : 60_000);
     };
   view.onclick = (e) => {
@@ -1060,7 +1095,7 @@ views.billing = async () => {
   const params = new URLSearchParams(location.hash.split('?')[1] || '');
   if (params.get('checkout') === 'success') toast('Thanks! Your subscription is active 🎉');
   let interval = params.get('interval') === 'year' ? 'year' : b.billing_interval || 'month';
-  const isOwner = state.me?.role === 'owner';
+  const isOwner = isAdmin();
   const statusText =
     {
       trialing: `Free trial — ends ${b.trial_ends_at ? new Date(b.trial_ends_at).toLocaleDateString() : 'soon'}`,
@@ -1135,7 +1170,7 @@ function freshWizard() {
   return { step: 'condition', condition: null, objective: null, details: {}, photos: [], vehicleId: null, posts: [], include: {}, results: null };
 }
 
-const isManager = () => ['owner', 'manager'].includes(state.me?.role);
+const isManager = () => isAdmin();
 const objectiveDef = () => (state.meta.objectives[wiz.condition] || []).find((o) => o.key === wiz.objective);
 const liveAccounts = (accounts) => accounts.filter((a) => a.enabled && a.mode === 'live');
 const composeClient = (p) => {
@@ -1676,8 +1711,8 @@ function renderUserBox() {
   const options = me.dealerships.map((d) => `<option value="${d.id}" ${d.id === me.dealership?.id ? 'selected' : ''}>${esc(d.name)}</option>`).join('');
   $('#user-box').innerHTML = `
     ${me.dealerships.length > 1 || me.user.is_superadmin ? `<select id="dealer-switch">${options}${me.dealership && !me.dealerships.some((d) => d.id === me.dealership.id) ? `<option selected>${esc(me.dealership.name)} (support)</option>` : ''}</select>` : ''}
-    <div class="clip">${esc(me.user.name || me.user.email)} · <span class="muted">${esc(me.role || '')}</span></div>
-    <div class="row" style="gap:6px"><button class="small" id="add-rooftop">+ Rooftop</button>${me.user.is_superadmin ? '<a class="btn small" href="/admin">Admin</a>' : ''}<button class="small" id="logout">Reset demo</button></div>`;
+    <div class="clip">${esc(me.user.name || me.user.email)} · <span class="muted">${esc(me.role_label || '')}</span></div>
+    <div class="row" style="gap:6px">${me.can_add_dealership ? '<button class="small" id="add-rooftop">+ Rooftop</button>' : ''}${me.user.is_superadmin ? '<a class="btn small" href="/admin">Admin</a>' : ''}<button class="small" id="logout">Reset demo</button></div>`;
   const sw = $('#dealer-switch');
   if (sw)
     sw.onchange = () =>
@@ -1691,7 +1726,7 @@ function renderUserBox() {
     location.hash = '#/create';
     location.reload();
   };
-  $('#add-rooftop').onclick = () => {
+  if ($('#add-rooftop')) $('#add-rooftop').onclick = () => {
     const { el, close } = openModal(
       'Add another dealership (rooftop)',
       `<form class="stack" id="rooftop-form"><p class="small muted">Each rooftop has its own inventory, accounts, team and subscription. It starts with a free trial.</p>
@@ -1720,7 +1755,7 @@ async function loadShell() {
   if (meRes.status === 401) return (location.href = '/login');
   state.me = await meRes.json();
   if (!state.me.dealership) {
-    view.innerHTML = `<div class="card stack" style="max-width:520px"><h2>You’re not part of a dealership yet</h2><p class="muted">Ask your manager for an invite, or create your own dealership.</p><div class="row"><button class="primary" id="add-rooftop">Create a dealership</button><button id="logout">Log out</button></div></div>`;
+    view.innerHTML = `<div class="card stack" style="max-width:520px"><h2>You’re not part of a dealership yet</h2><p class="muted">Ask your Dealer Admin to invite you${state.me.can_add_dealership ? ', or create your own dealership' : ''}.</p><div class="row">${state.me.can_add_dealership ? '<button class="primary" id="add-rooftop">Create a dealership</button>' : ''}<button id="logout">Log out</button></div></div>`;
     renderUserBox();
     throw new Error('no dealership');
   }
@@ -1729,7 +1764,10 @@ async function loadShell() {
   state.dealership = dealer;
   renderUserBox();
   renderBanner();
-  $('#dealer-name').textContent = dealer.name;
+  $('#dealer-name').textContent = dealer.dealer_number ? `${dealer.name} · #${dealer.dealer_number}` : dealer.name;
+  const mark = $('.brand-mark');
+  mark.innerHTML = dealer.logo_url ? `<img src="${esc(dealer.logo_url)}" alt="">` : 'DS';
+  mark.classList.toggle('has-logo', !!dealer.logo_url);
   // Only the platform owner needs to know how AI is configured.
   $('#ai-status').hidden = meta.ai_enabled || !state.me.user.is_superadmin;
   $('#ai-status').innerHTML = 'AI writing is off: posts use built-in templates. Set ANTHROPIC_API_KEY on the server to turn it on.';

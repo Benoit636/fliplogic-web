@@ -83,7 +83,7 @@ export function createApp() {
     res.json({ ok: true });
   });
   app.get('/api/public/plans', (req, res) =>
-    res.json({ plans: PLANS, trial_days: config.trialDays, product_name: config.productName, sales_email: config.supportEmail }),
+    res.json({ plans: PLANS, trial_days: config.trialDays, product_name: config.productName, sales_email: config.supportEmail, signup_open: config.allowSignup }),
   );
 
   app.use('/api/auth', authRoutes);

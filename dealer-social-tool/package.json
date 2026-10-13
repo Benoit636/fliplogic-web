@@ -11,6 +11,7 @@
     "start": "node --disable-warning=ExperimentalWarning src/server.js",
     "dev": "node --disable-warning=ExperimentalWarning --watch src/server.js",
     "seed": "node --disable-warning=ExperimentalWarning src/seed.js",
+    "create-dealer": "node --disable-warning=ExperimentalWarning scripts/create-dealer.js",
     "test": "node --disable-warning=ExperimentalWarning --test 'test/*.test.js'",
     "stripe:setup": "node --disable-warning=ExperimentalWarning scripts/stripe-setup.js",
     "backup": "node --disable-warning=ExperimentalWarning -e \"import('./src/db.js').then(m=>{m.openDb();console.log(m.backupDatabase())})\""

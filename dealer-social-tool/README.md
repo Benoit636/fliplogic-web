@@ -10,6 +10,7 @@ owner) see every customer, your revenue and usage in an admin console. Stripe ha
 > This is a standalone product. It is not related to Fliplogic or Algo+ and shares no code with them.
 
 - **Business model, pricing and go-to-market:** [`docs/BUSINESS_PLAN.md`](docs/BUSINESS_PLAN.md)
+- **Pilot setup (Dealer #001, first admin, inviting staff):** [`docs/PILOT_SETUP.md`](docs/PILOT_SETUP.md)
 - **Step-by-step launch checklist (accounts to create, keys to paste):** [`docs/LAUNCH_CHECKLIST.md`](docs/LAUNCH_CHECKLIST.md)
 
 ## Create Post: the core workflow
@@ -45,7 +46,7 @@ there, under **More tools**.
 | 💬 Inbox triage for comments, DMs and Google reviews, with lead detection and suggested replies | 🎁 Comp plans, extend trials, open any dealership for support |
 | 🚙 Inventory from CSV or an auto-synced feed. Price-drop, new-arrival and sold automations | 📏 Plan limits and usage metering (AI posts, assistant messages, accounts, seats) |
 | 📈 Analytics by network and post type | 🔐 Data isolated per dealership, tokens encrypted, CSRF protection and security headers |
-| 👥 Team roles (owner, manager, staff), invites, and multiple rooftops per login | 📨 Transactional email: welcome, invites, password reset, trial ending |
+| 👥 Two roles (Dealer Admin, Dealer Staff), personal logins by invite, and multiple rooftops per login | 📨 Transactional email: welcome, invites, password reset, trial ending |
 | ⬇️ Data export at any time | 💾 Nightly database backups, Docker and Render deploy files |
 
 ### Networks
@@ -84,11 +85,12 @@ Requires **Node.js 22.5 or newer**. It uses the built-in SQLite (`node:sqlite`),
 cd dealer-social-tool
 npm install
 cp .env.example .env
-npm run seed      # demo dealership. Log in with demo@example.com / demo12345
+npm run seed      # local demo data only; prints a one-time random password for demo@example.com
 npm start         # http://localhost:3000
 ```
 
 Add `SUPERADMIN_EMAILS=demo@example.com` to `.env` to see the `/admin` console with the demo login.
+For a real dealership, use `npm run create-dealer` instead (see [`docs/PILOT_SETUP.md`](docs/PILOT_SETUP.md)).
 
 The app works without any keys. Posts come from templates, the inbox uses keyword triage, billing shows plans
 but can't take payment yet, and emails are printed to the console. Each key you add turns on the real thing:

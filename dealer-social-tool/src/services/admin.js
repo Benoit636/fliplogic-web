@@ -16,7 +16,7 @@ export function platformOverview() {
   const since30 = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const dealerships = all(
     `SELECT d.*,
-      (SELECT u.email FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.dealership_id = d.id AND m.role = 'owner' ORDER BY m.created_at LIMIT 1) AS owner_email,
+      (SELECT u.email FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.dealership_id = d.id AND m.role = 'admin' ORDER BY m.created_at LIMIT 1) AS owner_email,
       (SELECT COUNT(*) FROM memberships m WHERE m.dealership_id = d.id) AS users,
       (SELECT COUNT(*) FROM accounts a WHERE a.dealership_id = d.id) AS accounts,
       (SELECT COUNT(*) FROM accounts a WHERE a.dealership_id = d.id AND a.mode = 'live') AS live_accounts,
@@ -31,6 +31,7 @@ export function platformOverview() {
     period,
   ).map((d) => ({
     id: d.id,
+    dealer_number: d.dealer_number,
     name: d.name,
     city: d.city,
     owner_email: d.owner_email,

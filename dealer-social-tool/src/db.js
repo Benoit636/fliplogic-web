@@ -251,7 +251,32 @@ const MIGRATIONS = [
   `
   ALTER TABLE posts ADD COLUMN brief TEXT NOT NULL DEFAULT '{}';
   `,
+  // 4: pilot setup: dealer numbers, branding, and two roles (Dealer Admin / Dealer Staff)
+  `
+  ALTER TABLE dealerships ADD COLUMN dealer_number TEXT;
+  ALTER TABLE dealerships ADD COLUMN province TEXT NOT NULL DEFAULT '';
+  ALTER TABLE dealerships ADD COLUMN postal_code TEXT NOT NULL DEFAULT '';
+  ALTER TABLE dealerships ADD COLUMN logo_url TEXT NOT NULL DEFAULT '';
+  ALTER TABLE dealerships ADD COLUMN brand_color TEXT NOT NULL DEFAULT '';
+  ALTER TABLE dealerships ADD COLUMN accent_color TEXT NOT NULL DEFAULT '';
+  UPDATE dealerships SET dealer_number = printf('%03d', id);
+  CREATE UNIQUE INDEX idx_dealerships_number ON dealerships(dealer_number);
+
+  CREATE TABLE memberships_v4 (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    dealership_id INTEGER NOT NULL REFERENCES dealerships(id) ON DELETE CASCADE,
+    role TEXT NOT NULL DEFAULT 'staff' CHECK (role IN ('admin', 'staff')),
+    created_at TEXT NOT NULL DEFAULT ${NOW},
+    PRIMARY KEY (user_id, dealership_id)
+  );
+  INSERT INTO memberships_v4 (user_id, dealership_id, role, created_at)
+    SELECT user_id, dealership_id, CASE role WHEN 'staff' THEN 'staff' ELSE 'admin' END, created_at FROM memberships;
+  DROP TABLE memberships;
+  ALTER TABLE memberships_v4 RENAME TO memberships;
+  UPDATE invites SET role = CASE role WHEN 'staff' THEN 'staff' ELSE 'admin' END;
+  `,
 ];
+export { MIGRATIONS };
 
 let db;
 
