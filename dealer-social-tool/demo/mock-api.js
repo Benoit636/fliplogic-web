@@ -1,7 +1,7 @@
 // In-browser stand-in for the Dealer Social server, so the real dashboard can be tried with
 // sample data and no account. It answers the same /api routes; nothing leaves the browser.
 (function () {
-  const STORE_KEY = 'dealer-social-demo-v3';
+  const STORE_KEY = 'dealer-social-demo-v4';
   // Same goals, fields and template copy as the real server.
   let OBJ = null;
   const objectivesReady = import('./shared/objectives.js').then((m) => {
@@ -81,7 +81,7 @@
       phone: '(506) 555-0123', address: '123 Main Street', city: 'Moncton, NB',
       brand_voice: 'Warm, upbeat and neighbourly. Proudly local. Straight talk, no pressure. A little playful with emojis on Instagram and TikTok.',
       default_hashtags: '#RiversideMotors #Moncton', call_to_action: 'Book your test drive today — call us or send a DM!',
-      compliance_notes: 'Prices exclude taxes and fees. Vehicle subject to prior sale.', autonomy: 'assist', language: 'English',
+      compliance_notes: 'Prices exclude taxes and fees. Vehicle subject to prior sale.', autonomy: 'assist', language: 'English', caption_language: 'bilingual', call_to_action_fr: 'Réservez votre essai routier dès aujourd’hui!', compliance_notes_fr: 'Taxes et frais en sus. Véhicule sujet à vente préalable.', require_approval: 1,
       distance_unit: 'km', timezone: 'America/Moncton', inventory_feed_url: '', feed_marks_sold: 1, feed_last_synced_at: null,
       feed_last_result: '', crm_lead_email: '', plan: 'pro', billing_interval: 'month', subscription_status: 'trialing',
       trial_ends_at: iso(t + 11 * DAY), current_period_end: null, stripe_customer_id: null,
@@ -340,8 +340,8 @@
     for (const p of state.posts) if (p.status === 'scheduled' && p.scheduled_at <= iso(now())) publish(p, 'scheduler');
   }
 
-  function generate({ post_type, platforms = [], vehicle_id, instructions = '', scheduled_at, actor = 'user', details, media }) {
-    if (OBJ?.OBJECTIVE_BY_KEY[post_type]) return generateObjective({ post_type, platforms, vehicle_id, details, media });
+  function generate({ post_type, platforms = [], vehicle_id, instructions = '', scheduled_at, actor = 'user', details, media, language }) {
+    if (OBJ?.OBJECTIVE_BY_KEY[post_type]) return generateObjective({ post_type, platforms, vehicle_id, details, media, language });
     if (!POST_TYPES[post_type]) throw err(400, 'Unknown post type');
     const wanted = [...new Set(platforms)].filter((x) => PLATFORMS[x]);
     if (!wanted.length) throw err(400, 'Pick at least one platform');
@@ -366,7 +366,8 @@
     return { engine: 'claude', batch_id: batch, posts: posts.map(present) };
   }
 
-  function generateObjective({ post_type, platforms, vehicle_id, details = {}, media }) {
+  function generateObjective({ post_type, platforms, vehicle_id, details = {}, media, language }) {
+    const lang = ['en', 'fr', 'bilingual'].includes(language) ? language : state.dealership.caption_language || 'en';
     const objective = OBJ.OBJECTIVE_BY_KEY[post_type];
     const wanted = [...new Set(platforms)].filter((x) => PLATFORMS[x]);
     const vehicle = vehicle_id ? state.vehicles.find((v) => v.id === Number(vehicle_id)) : null;
@@ -379,11 +380,11 @@
     const batch = `b${++state.seq}`;
     const photos = Array.isArray(media) && media.length ? media : vehicle ? vehicle.photos.slice(0, 4) : [];
     const posts = wanted.map((platform) => {
-      const copy = OBJ.writeObjectivePost({ objectiveKey: post_type, details: facts, dealer: state.dealership, platform, rules: PLATFORMS[platform] });
+      const copy = OBJ.writeObjectivePost({ objectiveKey: post_type, details: facts, dealer: state.dealership, platform, rules: PLATFORMS[platform], language: lang });
       const p = {
         id: ++state.seq, platform, post_type, ...copy, media: photos, vehicle_id: vehicle ? vehicle.id : null, status: 'draft', source: 'ai', batch_id: batch,
         scheduled_at: null, published_at: null, external_id: null, external_url: null, error: null, metrics: {},
-        brief: { condition: objective.condition, objective: post_type, details: facts }, created_at: iso(now()), updated_at: iso(now()),
+        brief: { condition: objective.condition, objective: post_type, details: facts }, language: lang, design: {}, approved_by_name: null, approved_at: null, created_at: iso(now()), updated_at: iso(now()),
       };
       state.posts.push(p);
       return p;
@@ -577,7 +578,7 @@
     if (a === 'meta')
       return { ai_enabled: true, ai_model: 'demo mode', platforms: PLATFORMS, post_types: POST_TYPES, post_statuses: STATUSES,
         general_post_types: ['promotion', 'event', 'service_tip', 'review_highlight', 'holiday', 'engagement', 'team_spotlight', 'custom'],
-        objectives: OBJ.OBJECTIVES, fields: OBJ.FIELDS,
+        objectives: OBJ.OBJECTIVES, fields: OBJ.FIELDS, image_labels: OBJ.IMAGE_LABELS, languages: OBJ.LANGUAGES,
         oauth: { meta: { label: 'Facebook & Instagram', platforms: ['facebook', 'instagram'], configured: true }, google: { label: 'Google Business Profile', platforms: ['google_business'], configured: true }, linkedin: { label: 'LinkedIn', platforms: ['linkedin'], configured: true }, x: { label: 'X (Twitter)', platforms: ['x'], configured: true }, tiktok: { label: 'TikTok', platforms: ['tiktok'], configured: true } },
         billing_enabled: true, plans: PLANS, role: 'admin', user: me().user, product_name: 'Dealer Social', support_email: 'support@example.com' };
     if (a === 'dashboard') {
@@ -792,7 +793,7 @@
           return null;
         }
         if (locked) throw err(409, `Post is ${p.status} and can no longer be edited`);
-        for (const k of ['content', 'hashtags', 'media', 'scheduled_at']) if (body[k] !== undefined) p[k] = body[k];
+        for (const k of ['content', 'hashtags', 'media', 'scheduled_at', 'design', 'language']) if (body[k] !== undefined) p[k] = body[k];
         p.updated_at = iso(now());
         log('user', 'post.edited', `#${p.id}`);
         return present(p);
@@ -807,34 +808,53 @@
         return { content, hashtags: p.hashtags };
       }
       if (locked) throw err(409, `Post is already ${p.status}`);
-      if (c === 'submit') p.status = 'pending_approval';
+      const approve = () => Object.assign(p, { approved_by_name: me().user.name, approved_at: iso(now()) });
+      if (c === 'submit') Object.assign(p, { status: 'pending_approval', approved_by_name: null, approved_at: null });
       if (c === 'mark-posted') {
+        if (!p.approved_at) approve(); // the demo user is a Dealer Admin
         Object.assign(p, { status: 'published', published_at: iso(now()), external_id: null, external_url: body?.url || null, error: null });
         log('user', 'post.posted_manually', `#${p.id} on ${PLATFORMS[p.platform].label}`);
       }
       if (c === 'approve') {
         p.status = p.scheduled_at ? 'scheduled' : 'approved';
         p.error = null;
-        log('user', 'post.approved', `#${p.id}`);
+        approve();
+        log('user', 'post.approved', `#${p.id} by ${me().user.name}`);
       }
       if (c === 'reject') {
         p.status = 'rejected';
         p.error = body.reason || null;
+        Object.assign(p, { approved_by_name: null, approved_at: null });
       }
       if (c === 'schedule') {
         p.scheduled_at = body.scheduled_at || iso(now());
         p.status = 'scheduled';
+        if (!p.approved_at) approve();
         log('user', 'post.scheduled', `#${p.id} for ${p.scheduled_at}`);
       }
       if (c === 'unschedule') Object.assign(p, { status: 'draft', scheduled_at: null });
-      if (c === 'publish') publish(p);
+      if (c === 'publish') {
+        if (!p.approved_at) approve();
+        publish(p);
+      }
       runScheduler();
       return present(p);
     }
     if (a === 'generate') return generate(body || {});
+    if (a === 'media' && b === 'import') return { url: body.url }; // demo photos are already in the browser
     if (a === 'media') {
       // Keep the (already resized) photo in the browser as a data URL.
       if (!(body instanceof Blob)) throw err(400, 'Upload a JPG, PNG or WebP photo');
+      // Post images (PNG) are re-encoded smaller so they fit in this browser's demo storage.
+      if (body.type === 'image/png' && body.size > 400_000) {
+        return createImageBitmap(body).then((bmp) => {
+          const cv = document.createElement('canvas');
+          cv.width = bmp.width;
+          cv.height = bmp.height;
+          cv.getContext('2d').drawImage(bmp, 0, 0);
+          return { url: cv.toDataURL('image/jpeg', 0.82) };
+        });
+      }
       return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = () => resolve({ url: reader.result });

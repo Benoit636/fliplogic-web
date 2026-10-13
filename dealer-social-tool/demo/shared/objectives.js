@@ -184,6 +184,23 @@ export const OBJECTIVE_BY_KEY = Object.fromEntries(OBJECTIVE_LIST.map((o) => [o.
 export const requiredFields = (objective) => objective.required ?? ['make', 'model'];
 export const fieldLabel = (objective, key) => objective.labels?.[key] || FIELDS[key]?.label || key;
 
+/** Short headline printed on the post image, in English and French. */
+export const IMAGE_LABELS = {
+  used_fresh_arrival: { en: 'Just arrived', fr: 'Tout juste arrivé' },
+  used_featured: { en: 'Featured vehicle', fr: 'Véhicule en vedette' },
+  used_price_drop: { en: 'Price drop', fr: 'Baisse de prix' },
+  used_aged: { en: 'Deal of the week', fr: 'Aubaine de la semaine' },
+  used_manager_special: { en: 'Manager’s special', fr: 'Spécial du directeur' },
+  used_trade_in: { en: 'Fresh trade-in', fr: 'Reprise récente' },
+  new_vehicle_arrival: { en: 'New arrival', fr: 'Nouvel arrivage' },
+  new_monthly_offer: { en: 'This month’s offer', fr: 'Offre du mois' },
+  new_model_spotlight: { en: 'Model spotlight', fr: 'Modèle en vedette' },
+  new_demo_special: { en: 'Demo special', fr: 'Spécial démo' },
+  new_leftover: { en: 'Last call', fr: 'Dernière chance' },
+  new_trade_up_event: { en: 'Trade-up event', fr: 'Événement d’échange' },
+  new_manager_special: { en: 'Manager’s special', fr: 'Spécial du directeur' },
+};
+
 /** Missing required details, as readable labels. */
 export function missingFields(objectiveKey, details = {}) {
   const o = OBJECTIVE_BY_KEY[objectiveKey];
@@ -397,29 +414,188 @@ function draft(objective, d, dealer) {
   }
 }
 
+// ---------- French (Canadian) template writer ----------
+
+/** 41500 → "41 500 $" (Canadian French). Wordier values are kept as typed. */
+export function formatMoneyFr(v) {
+  const s = clean(v);
+  if (!s) return '';
+  const n = Number(s.replace(/[$,\s]/g, ''));
+  return Number.isFinite(n) && /^[$\d,.\s]+$/.test(s) ? `${n.toLocaleString('fr-CA', { maximumFractionDigits: 2 })} $` : s;
+}
+
+function formatDateFr(value) {
+  const s = clean(value);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const [y, m, day] = s.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, day)).toLocaleDateString('fr-CA', { month: 'long', day: 'numeric', timeZone: 'UTC' });
+}
+
+function draftFr(objective, d, dealer) {
+  const name = vehicleName(d) || [d.make, d.model].map(clean).filter(Boolean).join(' ') || 'ce véhicule';
+  const short = [d.year, d.make, d.model].map(clean).filter(Boolean).join(' ') || name;
+  const unit = dealer.distance_unit || 'km';
+  const km = toNumber(d.mileage) != null ? `${toNumber(d.mileage).toLocaleString('fr-CA')} ${unit}` : '';
+  const price = formatMoneyFr(d.price);
+  const was = formatMoneyFr(d.previous_price);
+  const savings =
+    toNumber(d.previous_price) && toNumber(d.price) && toNumber(d.previous_price) > toNumber(d.price) ? toNumber(d.previous_price) - toNumber(d.price) : null;
+  const spec = [clean(d.exterior_color), km, price && (objective.key === 'new_model_spotlight' ? `à partir de ${price}` : price)].filter(Boolean).join(' • ');
+  const points = sellingPoints(d);
+  const bullets = points.length ? points.map((p) => `✅ ${p}`).join('\n') : '';
+  const stock = clean(d.stock_number) ? `Demandez le numéro de stock ${clean(d.stock_number)}.` : '';
+  const expires = clean(d.offer_expires) ? `⏳ L’offre se termine le ${formatDateFr(d.offer_expires)}.` : '';
+  const offerLines = [
+    clean(d.payment) && `💰 ${clean(d.payment)}`,
+    clean(d.finance_offer) && `🏦 Financement : ${clean(d.finance_offer)}`,
+    clean(d.lease_offer) && `📝 Location : ${clean(d.lease_offer)}`,
+    clean(d.dealer_incentive) && `🎁 ${clean(d.dealer_incentive)}`,
+    toNumber(d.available_count) && `📦 ${toNumber(d.available_count)} en stock`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+  const notes = clean(d.notes);
+  const store = dealer.name || 'notre concession';
+
+  switch (objective.key) {
+    case 'used_fresh_arrival':
+      return { hook: `🚨 Tout juste arrivé : ${name}!`, lines: [`Il vient d’arriver chez ${store} et ne restera pas longtemps.`, spec, bullets, notes, 'Soyez le premier à le voir.'] };
+    case 'used_featured':
+      return { hook: `⭐ Véhicule en vedette : ${name}`, lines: ['Voici pourquoi il se démarque :', bullets, spec, notes, 'Venez le voir en personne cette semaine.'] };
+    case 'used_price_drop':
+      return {
+        hook: `💥 Baisse de prix sur notre ${name}!`,
+        lines: [
+          was && price
+            ? `Avant ${was}, maintenant ${price}${savings ? ` (vous économisez ${savings.toLocaleString('fr-CA')} $)` : ''}.`
+            : price
+              ? `Nouveau prix réduit : ${price}.`
+              : 'Nous venons de baisser le prix.',
+          km,
+          bullets,
+          notes,
+          'Les aubaines comme celle-ci partent vite.',
+        ],
+      };
+    case 'used_aged':
+      return {
+        hook: `🔥 Aubaine de la semaine : ${name}`,
+        lines: ['Un prix pour vendre rapidement, et prêt pour un essai routier dès aujourd’hui.', spec, bullets, notes, 'Venez le chercher cette semaine.'],
+      };
+    case 'used_manager_special':
+    case 'new_manager_special':
+      return {
+        hook: `🏷️ Spécial du directeur : ${name}`,
+        lines: [notes || 'Choisi par notre directeur pour une offre spéciale.', spec, offerLines, bullets, expires, stock || 'Pour un temps limité seulement.'],
+      };
+    case 'used_trade_in':
+      return {
+        hook: `🔁 Reprise récente : ${name}`,
+        lines: [
+          `Tout juste échangé ici chez ${store} et prêt pour son prochain propriétaire.`,
+          spec,
+          bullets,
+          notes,
+          'Curieux de connaître la valeur de votre véhicule? Demandez-nous une évaluation gratuite.',
+        ],
+      };
+    case 'new_vehicle_arrival':
+      return { hook: `✨ Il est arrivé! Le tout nouveau ${name}.`, lines: [bullets, spec, notes, 'Venez le voir en personne et réservez le premier essai routier.'] };
+    case 'new_monthly_offer': {
+      const headline = clean(d.payment)
+        ? `${short} à partir de ${clean(d.payment)}`
+        : clean(d.finance_offer)
+          ? `${clean(d.finance_offer)} sur le ${short}`
+          : clean(d.lease_offer)
+            ? `Louez le ${short} : ${clean(d.lease_offer)}`
+            : `Offres spéciales sur le ${short}`;
+      return { hook: `📅 Ce mois-ci chez ${store} : ${headline}`, lines: [offerLines, bullets, notes, expires] };
+    }
+    case 'new_model_spotlight':
+      return {
+        hook: `🔍 Modèle en vedette : le ${short}`,
+        lines: ['Voici ce que les conducteurs adorent :', bullets, spec, notes, 'Envie d’une présentation complète? Nous vous montrerons chaque caractéristique.'],
+      };
+    case 'new_demo_special':
+      return {
+        hook: `🚘 Spécial démo : ${name}${km ? ` avec seulement ${km}` : ''}`,
+        lines: [
+          'L’impression d’un véhicule neuf, à prix de démo.',
+          was && price ? `PDSF ${was}, prix démo ${price}.` : price && `Prix démo : ${price}.`,
+          bullets,
+          notes,
+          expires,
+          stock,
+        ],
+      };
+    case 'new_leftover':
+      return {
+        hook: `📢 Dernière chance : ${short || 'modèles de l’an dernier'}!`,
+        lines: [
+          `Nous faisons de la place pour la nouvelle année modèle : ${toNumber(d.available_count) ? `les ${toNumber(d.available_count)} derniers véhicules profitent` : 'les derniers véhicules profitent'} de nos meilleures offres.`,
+          price && `Maintenant ${price}.`,
+          offerLines,
+          bullets,
+          notes,
+          expires,
+        ],
+      };
+    case 'new_trade_up_event': {
+      const target = [clean(d.make), clean(d.model)].filter(Boolean).join(' ');
+      return {
+        hook: `🔁 Événement d’échange chez ${store}!`,
+        lines: [
+          'Votre véhicule actuel pourrait valoir plus que vous le pensez.',
+          target && `Passez à un ${target} neuf.`,
+          offerLines,
+          notes,
+          expires.replace('L’offre se termine', 'L’événement se termine'),
+          'Apportez votre véhicule pour une évaluation gratuite.',
+        ],
+      };
+    }
+    default:
+      return { hook: name, lines: [spec, bullets, notes] };
+  }
+}
+
+export const LANGUAGES = { en: 'English', fr: 'Français', bilingual: 'English + Français' };
+export const BILINGUAL_SEPARATOR = '\n\n———\n\n';
+export const DEFAULT_CTA = { en: 'Call or message us to book a test drive.', fr: 'Appelez-nous ou écrivez-nous pour réserver un essai routier.' };
+
+/** Which caption languages a post uses ("bilingual" = English, then French). */
+export const languagesFor = (language) => (language === 'bilingual' ? ['en', 'fr'] : [language === 'fr' ? 'fr' : 'en']);
+
 /**
  * Template copy for one platform. `rules` = { maxChars, maxHashtags }.
- * Returns { title, content, hashtags, image_idea }.
+ * language: "en" | "fr" | "bilingual". Returns { title, content, hashtags, image_idea }.
  */
-export function writeObjectivePost({ objectiveKey, details = {}, dealer = {}, platform, rules }) {
+export function writeObjectivePost({ objectiveKey, details = {}, dealer = {}, platform, rules, language = 'en' }) {
   const objective = OBJECTIVE_BY_KEY[objectiveKey];
-  const { hook, lines } = draft(objective, details, dealer);
   const pricing = mentionsPricing(details);
-  const body = lines.filter((l) => clean(l));
-  const cta = dealer.call_to_action || 'Call or message us to book a test drive.';
+  let langs = languagesFor(language);
+  if (platform === 'x') langs = langs.slice(0, 1); // 280 characters: one language only
+  const ctaFor = (lang) => (lang === 'fr' ? dealer.call_to_action_fr || DEFAULT_CTA.fr : dealer.call_to_action || DEFAULT_CTA.en);
+  const compliance = (lang) => (lang === 'fr' ? dealer.compliance_notes_fr : dealer.compliance_notes) || '';
   let content;
   if (platform === 'x') {
+    const { hook, lines } = langs[0] === 'fr' ? draftFr(objective, details, dealer) : draft(objective, details, dealer);
+    const body = lines.filter((l) => clean(l));
     const plainHook = hook.toLowerCase();
     const extra = body
       .flatMap((l) => l.split('\n'))
       .map((l) => l.trim())
       .find((l) => l && !l.startsWith('✅') && !plainHook.includes(l.replace(/^[^\w$]+/, '').toLowerCase()));
-    content = [hook, extra || '', cta].filter(Boolean).join(' ');
+    content = [hook, extra || '', ctaFor(langs[0])].filter(Boolean).join(' ');
   } else {
-    const parts = [hook, ...body, cta];
-    if (dealer.phone && platform !== 'linkedin') parts.push(`📞 ${dealer.phone}`);
-    if (pricing && dealer.compliance_notes) parts.push(dealer.compliance_notes);
-    content = parts.join('\n\n');
+    const blocks = langs.map((lang) => {
+      const { hook, lines } = lang === 'fr' ? draftFr(objective, details, dealer) : draft(objective, details, dealer);
+      return [hook, ...lines.filter((l) => clean(l)), ctaFor(lang)].join('\n\n');
+    });
+    const tail = [];
+    if (dealer.phone && platform !== 'linkedin') tail.push(`📞 ${dealer.phone}`);
+    if (pricing) tail.push(...langs.map(compliance).filter(Boolean));
+    content = [blocks.join(BILINGUAL_SEPARATOR), ...tail].join('\n\n');
   }
   if (platform === 'linkedin' || platform === 'google_business') content = content.replace(/^[^\w$#(\n]+[ \t]*/gm, '');
 
@@ -429,7 +605,9 @@ export function writeObjectivePost({ objectiveKey, details = {}, dealer = {}, pl
     .map((t) => (t.startsWith('#') ? t : `#${t}`));
   if (clean(details.make)) tags.push(tagify(details.make));
   if (clean(details.make) && clean(details.model)) tags.push(tagify(`${details.make}${details.model}`));
-  tags.push(objective.condition === 'new' || objectiveKey.startsWith('new_') ? '#NewCars' : '#UsedCars');
+  const isNew = objective.condition === 'new' || objectiveKey.startsWith('new_');
+  if (langs.includes('en')) tags.push(isNew ? '#NewCars' : '#UsedCars');
+  if (langs.includes('fr')) tags.push(isNew ? '#VehiculesNeufs' : '#VehiculesUsages');
   const hashtags = [...new Set(tags)].slice(0, rules?.maxHashtags ?? 5);
 
   const max = rules?.maxChars ?? 63206;

@@ -70,6 +70,7 @@ write(
 );
 
 write('shared/objectives.js', read('src/shared/objectives.js'));
+write('post-image.js', read('public/post-image.js'));
 write('shared/inventory-csv.js', read('src/shared/inventory-csv.js'));
 write('inventory-template.csv', read('public/inventory-template.csv'));
 

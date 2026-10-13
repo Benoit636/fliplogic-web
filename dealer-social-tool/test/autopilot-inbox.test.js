@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { tenantTest as test } from './helpers.js';
+import { tenantTest as test, allowAutopilot } from './helpers.js';
 import { computeNextRun, createRule, runRule, runDueRules, getRule } from '../src/services/autopilot.js';
 import { updateVehicle } from '../src/services/inventory.js';
 import { listPosts } from '../src/services/posts.js';
@@ -56,6 +56,7 @@ test('fallback triage recognises leads, complaints, spam and praise', (fixtures)
 });
 
 test('autopilot inbox: replies to praise, escalates leads, dismisses spam', async (fixtures) => {
+  allowAutopilot();
   updateDealership({ autonomy: 'autopilot' });
   const praise = await ingestMessage({ platform: 'facebook', author: 'Ann', text: 'Love this car!' });
   const lead = await ingestMessage({ platform: 'facebook', author: 'Bob', text: 'Do you take trade-ins?' });

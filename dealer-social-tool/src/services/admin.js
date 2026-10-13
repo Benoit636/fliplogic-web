@@ -1,5 +1,5 @@
 // Platform-owner console: every customer dealership, revenue and usage at a glance.
-import { all, get } from '../db.js';
+import { all, get, run } from '../db.js';
 import { PLANS } from '../plans.js';
 import { currentPeriod } from './entitlements.js';
 import { getDealershipById, updateBilling } from './dealership.js';
@@ -76,9 +76,13 @@ export function platformOverview() {
 }
 
 /** Manual overrides for sales-led deals, pilots and support (comped plans, extended trials). */
-export function adminUpdateDealership(id, { plan, subscription_status, extend_trial_days }) {
+export function adminUpdateDealership(id, { plan, subscription_status, extend_trial_days, require_approval }) {
   const d = getDealershipById(id);
   if (!d) throw httpError(404, 'Dealership not found');
+  // Platform-owner switch: approval is required by default; turning it off allows full autopilot.
+  if (require_approval !== undefined) {
+    run(`UPDATE dealerships SET require_approval = ?, autonomy = CASE WHEN ? THEN 'assist' ELSE autonomy END WHERE id = ?`, require_approval ? 1 : 0, require_approval ? 1 : 0, id);
+  }
   const patch = {};
   if (plan) patch.plan = plan;
   if (subscription_status) {

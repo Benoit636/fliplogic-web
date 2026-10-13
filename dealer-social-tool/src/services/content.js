@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { generatePostVariants } from '../ai/generator.js';
 import { logActivity } from '../db.js';
-import { isAutopilot } from './dealership.js';
+import { isAutopilot, getDealership } from './dealership.js';
 import { getVehicle, markVehiclePosted, markSoldCelebrated, vehicleTitle } from './inventory.js';
 import { createPost } from './posts.js';
 import { httpError } from './errors.js';
@@ -22,15 +22,17 @@ export async function createPostsFromIdea({
   details = null,
   actor = 'user',
   source = 'ai',
+  language = null,
 }) {
   const vehicle = vehicleId ? getVehicle(Number(vehicleId)) : null;
   if (vehicleId && !vehicle) throw httpError(404, `Vehicle ${vehicleId} not found`);
 
+  const lang = ['en', 'fr', 'bilingual'].includes(language) ? language : getDealership().caption_language || 'en';
   const reserved = new Set(platforms).size || 1;
   consumeAiPosts(reserved);
   let generated;
   try {
-    generated = await generatePostVariants({ postType, vehicle, details, platforms, instructions });
+    generated = await generatePostVariants({ postType, vehicle, details, platforms, instructions, language: lang });
   } catch (err) {
     addUsage('ai_posts', -reserved); // don't charge the allowance for a failed generation
     throw err;
@@ -54,6 +56,7 @@ export async function createPostsFromIdea({
         batch_id: batchId,
         scheduled_at: scheduledAt,
         brief,
+        language: lang,
       },
       actor,
     ),

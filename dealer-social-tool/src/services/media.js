@@ -7,6 +7,8 @@ import { config } from '../config.js';
 import { randomToken } from '../crypto.js';
 import { tenantId } from '../tenant.js';
 import { httpError } from './errors.js';
+import { get, run } from '../db.js';
+import { assertPublicUrl } from '../net.js';
 
 const SIGNATURES = [
   { ext: 'jpg', test: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
@@ -37,4 +39,52 @@ export const absoluteMediaUrl = (url) => (url.startsWith('/') ? `${config.appUrl
 export function cleanMediaList(list) {
   if (!Array.isArray(list)) return null;
   return list.filter((u) => typeof u === 'string' && (/^\/media\/\d+\/[\w-]+\.(jpg|png|webp)$/.test(u) || /^https?:\/\//i.test(u))).slice(0, 10);
+}
+
+const MEDIA_PATH = /^\/media\/(\d+)\/([\w-]+\.(?:jpg|png|webp))$/;
+const mediaFileExists = (url) => {
+  const m = url.match(MEDIA_PATH);
+  return !!m && fs.existsSync(path.join(config.mediaDir, m[1], m[2]));
+};
+
+/**
+ * Copy a photo from the dealer's website / DMS image host into our own /media, so the browser
+ * can draw it into the post image and the image can be saved as PNG. Each address is fetched once
+ * per dealership. Only public hosts, redirects re-checked, images only, 10 MB max.
+ */
+export async function importRemotePhoto(sourceUrl) {
+  const url = String(sourceUrl || '').trim();
+  if (MEDIA_PATH.test(url)) {
+    if (!url.startsWith(`/media/${tenantId()}/`)) throw httpError(403, 'That photo belongs to another dealership');
+    return { url };
+  }
+  if (!/^https?:\/\//i.test(url) || url.length > 2000) throw httpError(400, 'Photo link must start with http(s)://');
+  const cached = get('SELECT media_url FROM media_imports WHERE dealership_id = ? AND source_url = ?', tenantId(), url);
+  if (cached && mediaFileExists(cached.media_url)) return { url: cached.media_url };
+
+  let current = url;
+  for (let hop = 0; hop < 4; hop++) {
+    try {
+      await assertPublicUrl(current);
+    } catch (err) {
+      throw httpError(400, err.message);
+    }
+    let res;
+    try {
+      res = await fetch(current, { redirect: 'manual', signal: AbortSignal.timeout(15_000), headers: { accept: 'image/*' } });
+    } catch {
+      throw httpError(502, 'Couldn’t reach the photo’s website');
+    }
+    if ([301, 302, 303, 307, 308].includes(res.status) && res.headers.get('location')) {
+      current = new URL(res.headers.get('location'), current).href;
+      continue;
+    }
+    if (!res.ok) throw httpError(502, `Couldn’t download that photo (HTTP ${res.status})`);
+    if (Number(res.headers.get('content-length') || 0) > MAX_PHOTO_BYTES) throw httpError(413, 'Photos must be under 10 MB');
+    const buffer = Buffer.from(await res.arrayBuffer());
+    const saved = savePhoto(buffer);
+    run('INSERT OR REPLACE INTO media_imports (dealership_id, source_url, media_url) VALUES (?, ?, ?)', tenantId(), url, saved.url);
+    return saved;
+  }
+  throw httpError(502, 'That photo link redirects too many times');
 }

@@ -56,6 +56,9 @@ tenantTest('plan limits: accounts, AI posts, features', async (a) => {
   await assert.rejects(createPostsFromIdea({ postType: 'service_tip', platforms: ['facebook'] }), /Monthly AI post limit/);
 
   const { updateDealership } = await import('../src/services/dealership.js');
+  assert.throws(() => updateDealership({ autonomy: 'autopilot' }), /approval/);
+  const { run: runSql } = await import('../src/db.js');
+  runSql('UPDATE dealerships SET require_approval = 0');
   assert.throws(() => updateDealership({ autonomy: 'autopilot' }), /Pro plan/);
 });
 

@@ -27,6 +27,9 @@ const EDITABLE = [
   'postal_code',
   'brand_color',
   'accent_color',
+  'caption_language',
+  'call_to_action_fr',
+  'compliance_notes_fr',
 ];
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 const DEALER_NUMBER = /^\d{3,6}$/;
@@ -74,6 +77,10 @@ export function createDealership({ name, timezone, dealerNumber }) {
 
 export function updateDealership(fields) {
   if (fields.autonomy && !['assist', 'autopilot'].includes(fields.autonomy)) throw httpError(400, 'autonomy must be "assist" or "autopilot"');
+  if (fields.caption_language && !['en', 'fr', 'bilingual'].includes(fields.caption_language)) throw httpError(400, 'Caption language must be en, fr or bilingual');
+  if (fields.autonomy === 'autopilot' && getDealership().require_approval) {
+    throw httpError(409, 'Every post needs a Dealer Admin’s approval at this dealership, so full autopilot is off');
+  }
   if (fields.autonomy === 'autopilot' && !currentEntitlements().features.autopilot) {
     throw httpError(402, 'Full autopilot is available on the Pro plan and above');
   }
@@ -134,9 +141,10 @@ export function defaultHashtags(dealer = getDealership()) {
     .map((t) => (t.startsWith('#') ? t : `#${t}`));
 }
 
+// With require_approval (the default) nothing is ever published without a Dealer Admin's approval.
 export const isAutopilot = () => {
   const d = getDealership();
-  return d.autonomy === 'autopilot' && entitlements(d).features.autopilot;
+  return !d.require_approval && d.autonomy === 'autopilot' && entitlements(d).features.autopilot;
 };
 
 export const currentEntitlements = () => entitlements(getDealership());

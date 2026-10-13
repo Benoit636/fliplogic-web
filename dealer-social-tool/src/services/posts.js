@@ -12,6 +12,7 @@ export function presentPost(row) {
     media: parseJson(row.media, []),
     metrics: parseJson(row.metrics, {}),
     brief: parseJson(row.brief, {}),
+    design: parseJson(row.design, {}),
   };
   post.warnings = validatePost(post);
   return post;
@@ -103,8 +104,8 @@ export function createPost(input, actor = 'user') {
   const postType = POST_TYPES[input.post_type] ? input.post_type : 'custom';
   const status = input.status && POST_STATUSES.includes(input.status) ? input.status : 'draft';
   const { lastInsertRowid } = run(
-    `INSERT INTO posts (dealership_id, platform, post_type, title, content, hashtags, media, image_idea, vehicle_id, status, source, batch_id, scheduled_at, brief)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO posts (dealership_id, platform, post_type, title, content, hashtags, media, image_idea, vehicle_id, status, source, batch_id, scheduled_at, brief, language)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     tenantId(),
     input.platform,
     postType,
@@ -119,6 +120,7 @@ export function createPost(input, actor = 'user') {
     input.batch_id || null,
     checkDate(input.scheduled_at),
     JSON.stringify(input.brief || {}),
+    ['en', 'fr', 'bilingual'].includes(input.language) ? input.language : 'en',
   );
   const post = getPost(Number(lastInsertRowid));
   logActivity(actor, 'post.created', `#${post.id} ${PLATFORMS[post.platform].label} ${post.post_type} (${post.status})`);
@@ -133,10 +135,12 @@ export function updatePost(id, fields, actor = 'user') {
   const patch = { ...fields };
   if (patch.hashtags) patch.hashtags = JSON.stringify(patch.hashtags);
   if (patch.media) patch.media = JSON.stringify(patch.media);
+  if (patch.design !== undefined) patch.design = JSON.stringify(patch.design && typeof patch.design === 'object' ? patch.design : {});
+  if (patch.language !== undefined && !['en', 'fr', 'bilingual'].includes(patch.language)) throw httpError(400, 'Language must be en, fr or bilingual');
   if (patch.scheduled_at !== undefined) patch.scheduled_at = checkDate(patch.scheduled_at);
   if (patch.platform && !PLATFORMS[patch.platform]) throw httpError(400, 'Unknown platform');
   checkVehicle(patch.vehicle_id);
-  updateRow('posts', id, patch, ['platform', 'post_type', 'title', 'content', 'hashtags', 'media', 'image_idea', 'vehicle_id', 'scheduled_at']);
+  updateRow('posts', id, patch, ['platform', 'post_type', 'title', 'content', 'hashtags', 'media', 'image_idea', 'vehicle_id', 'scheduled_at', 'design', 'language']);
   // The bot editing an approved post sends it back for human review in assist mode.
   if (actor === 'bot' && !isAutopilot() && ['approved', 'scheduled'].includes(post.status)) {
     setStatus(id, 'pending_approval');
@@ -153,31 +157,51 @@ export function deletePost(id, actor = 'user') {
 }
 
 function setStatus(id, status, extra = {}) {
-  updateRow('posts', id, { status, ...extra }, ['status', 'scheduled_at', 'error', 'published_at', 'external_id', 'external_url', 'metrics']);
+  updateRow('posts', id, { status, ...extra }, [
+    'status',
+    'scheduled_at',
+    'error',
+    'published_at',
+    'external_id',
+    'external_url',
+    'metrics',
+    'approved_by',
+    'approved_by_name',
+    'approved_at',
+  ]);
 }
+
+const NOT_APPROVED = { approved_by: null, approved_by_name: null, approved_at: null };
+/** Who approved: recorded on the post so there's a trail of every approval. */
+const approval = (approver) => ({
+  approved_by: approver?.id ?? null,
+  approved_by_name: approver ? approver.name || approver.email : 'Dealer Admin',
+  approved_at: nowIso(),
+});
+export const isApproved = (post) => !!post.approved_at && ['approved', 'scheduled', 'publishing', 'published'].includes(post.status);
 
 export function submitForApproval(id, actor = 'user') {
   const post = requirePost(id);
   if (!['draft', 'rejected', 'failed'].includes(post.status)) throw httpError(409, `Cannot submit a ${post.status} post`);
-  setStatus(id, 'pending_approval', { error: null });
+  setStatus(id, 'pending_approval', { error: null, ...NOT_APPROVED });
   logActivity(actor, 'post.submitted', `#${id}`);
   return getPost(id);
 }
 
 /** Approve a post. If it has a future time it is queued, otherwise it waits in "approved". */
-export function approvePost(id, actor = 'user') {
+export function approvePost(id, actor = 'user', approver = null) {
   const post = requirePost(id);
   if (LOCKED.includes(post.status)) throw httpError(409, `Post is already ${post.status}`);
   const status = post.scheduled_at ? 'scheduled' : 'approved';
-  setStatus(id, status, { error: null });
-  logActivity(actor, 'post.approved', `#${id}${post.scheduled_at ? ` for ${post.scheduled_at}` : ''}`);
+  setStatus(id, status, { error: null, ...approval(approver) });
+  logActivity(actor, 'post.approved', `#${id}${approver ? ` by ${approver.name || approver.email}` : ''}${post.scheduled_at ? ` for ${post.scheduled_at}` : ''}`);
   return getPost(id);
 }
 
 export function rejectPost(id, reason = '', actor = 'user') {
   const post = requirePost(id);
   if (LOCKED.includes(post.status)) throw httpError(409, `Post is already ${post.status}`);
-  setStatus(id, 'rejected', { error: reason || null });
+  setStatus(id, 'rejected', { error: reason || null, ...NOT_APPROVED });
   logActivity(actor, 'post.rejected', `#${id} ${reason}`);
   return getPost(id);
 }
@@ -186,12 +210,14 @@ export function rejectPost(id, reason = '', actor = 'user') {
  * Put a post on the calendar. Humans approve by scheduling; the bot only
  * gets straight to "scheduled" when the dealership runs in autopilot mode.
  */
-export function schedulePost(id, scheduledAt, { actor = 'user', autopilot = false } = {}) {
+export function schedulePost(id, scheduledAt, { actor = 'user', autopilot = false, approver = null } = {}) {
   const post = requirePost(id);
   if (LOCKED.includes(post.status)) throw httpError(409, `Post is already ${post.status}`);
   const when = checkDate(scheduledAt) || nowIso();
-  const approved = actor === 'user' || autopilot || ['approved', 'scheduled'].includes(post.status);
-  setStatus(id, approved ? 'scheduled' : 'pending_approval', { scheduled_at: when, error: null });
+  const alreadyApproved = !!post.approved_at && ['approved', 'scheduled'].includes(post.status);
+  const approved = actor === 'user' || autopilot || alreadyApproved;
+  const stamp = alreadyApproved ? {} : approved ? approval(actor === 'user' ? approver : { name: 'autopilot' }) : NOT_APPROVED;
+  setStatus(id, approved ? 'scheduled' : 'pending_approval', { scheduled_at: when, error: null, ...stamp });
   logActivity(actor, approved ? 'post.scheduled' : 'post.submitted', `#${id} for ${when}`);
   return getPost(id);
 }
@@ -199,7 +225,7 @@ export function schedulePost(id, scheduledAt, { actor = 'user', autopilot = fals
 export function unschedulePost(id, actor = 'user') {
   const post = requirePost(id);
   if (!['scheduled', 'approved', 'failed'].includes(post.status)) throw httpError(409, `Cannot unschedule a ${post.status} post`);
-  setStatus(id, 'draft', { scheduled_at: null });
+  setStatus(id, 'draft', { scheduled_at: null, ...NOT_APPROVED });
   logActivity(actor, 'post.unscheduled', `#${id}`);
   return getPost(id);
 }
@@ -232,6 +258,7 @@ export function markPublished(id, { external_id, external_url, metrics }) {
 export function markPostedManually(id, { url = '' } = {}, actor = 'user') {
   const post = requirePost(id);
   if (LOCKED.includes(post.status)) throw httpError(409, `Post is already ${post.status}`);
+  if (!isApproved(post)) throw httpError(403, 'A Dealer Admin needs to approve this post before it’s posted');
   if (url && !/^https?:\/\//i.test(url)) throw httpError(400, 'Link must start with http(s)://');
   setStatus(id, 'published', { published_at: nowIso(), external_id: null, external_url: url || null, metrics: '{}', error: null });
   logActivity(actor, 'post.posted_manually', `#${id} on ${PLATFORMS[post.platform].label}`);

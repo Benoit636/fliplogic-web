@@ -284,6 +284,28 @@ const MIGRATIONS = [
   CREATE UNIQUE INDEX idx_vehicles_vin ON vehicles(dealership_id, vin) WHERE vin <> '';
   CREATE UNIQUE INDEX idx_vehicles_stock ON vehicles(dealership_id, stock_number) WHERE stock_number <> '';
   `,
+  // 6: social workflow: caption language, post image design, recorded manager approval, photo imports
+  `
+  ALTER TABLE dealerships ADD COLUMN caption_language TEXT NOT NULL DEFAULT 'en' CHECK (caption_language IN ('en', 'fr', 'bilingual'));
+  ALTER TABLE dealerships ADD COLUMN call_to_action_fr TEXT NOT NULL DEFAULT 'Réservez votre essai routier dès aujourd’hui!';
+  ALTER TABLE dealerships ADD COLUMN compliance_notes_fr TEXT NOT NULL DEFAULT 'Taxes et frais en sus. Véhicule sujet à vente préalable.';
+  ALTER TABLE dealerships ADD COLUMN require_approval INTEGER NOT NULL DEFAULT 1;
+  UPDATE dealerships SET autonomy = 'assist';
+  ALTER TABLE posts ADD COLUMN language TEXT NOT NULL DEFAULT 'en';
+  ALTER TABLE posts ADD COLUMN design TEXT NOT NULL DEFAULT '{}';
+  ALTER TABLE posts ADD COLUMN approved_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+  ALTER TABLE posts ADD COLUMN approved_by_name TEXT;
+  ALTER TABLE posts ADD COLUMN approved_at TEXT;
+  -- Posts already approved or published before this version count as approved.
+  UPDATE posts SET approved_at = updated_at, approved_by_name = 'before approvals were recorded' WHERE status IN ('approved', 'scheduled', 'publishing', 'published');
+  CREATE TABLE media_imports (
+    dealership_id INTEGER NOT NULL REFERENCES dealerships(id) ON DELETE CASCADE,
+    source_url TEXT NOT NULL,
+    media_url TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT ${NOW},
+    PRIMARY KEY (dealership_id, source_url)
+  );
+  `,
 ];
 export { MIGRATIONS };
 

@@ -13,7 +13,8 @@ export function dealershipBrief(d) {
     d.call_to_action && `Preferred call to action: ${d.call_to_action}`,
     d.default_hashtags && `Always-on hashtags: ${d.default_hashtags}`,
     d.compliance_notes && `Compliance / legal notes: ${d.compliance_notes}`,
-    `Write in: ${d.language || 'English'}`,
+    d.call_to_action_fr && `Preferred call to action in French: ${d.call_to_action_fr}`,
+    d.compliance_notes_fr && `Compliance / legal notes in French: ${d.compliance_notes_fr}`,
   ]
     .filter(Boolean)
     .join('\n');
@@ -67,8 +68,16 @@ export function postRequest({ postType, vehicle, platforms, instructions, unit }
 }
 
 /** Prompt for the New/Used "Create Post" flow: objective + exactly what the manager typed. */
-export function objectiveRequest({ objective, details, platforms, unit, instructions }) {
+const LANGUAGE_RULES = {
+  en: 'Write the post in English.',
+  fr: 'Write the post in natural Canadian French (as used in New Brunswick and Quebec), not a word-for-word translation. Use French number formats (41 500 $, 38 500 km) and the French call to action and compliance note.',
+  bilingual:
+    'Write the post bilingually: the full English version first, then a line containing only "———", then the full Canadian French version (natural, not word-for-word; French number formats like 41 500 $). Put the phone number and compliance notes (English then French) once at the end, after both versions. On x, write English only (280 characters).',
+};
+
+export function objectiveRequest({ objective, details, platforms, unit, instructions, language = 'en' }) {
   return [
+    LANGUAGE_RULES[language] || LANGUAGE_RULES.en,
     `Write one ${objective.condition === 'new' ? 'NEW' : 'USED'} vehicle post with the objective "${objective.label}" for each of these platforms: ${platforms.join(', ')}.`,
     `\nObjective guidance: ${objective.angle}`,
     `\nDetails from the sales manager (the only facts you may use):\n${briefFacts(objective, details, unit) || '(none given; keep it general and invite people to ask)'}`,

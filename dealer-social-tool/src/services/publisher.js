@@ -13,6 +13,7 @@ export async function publishPost(id, actor = 'system') {
   const post = getPost(id);
   if (!post) throw httpError(404, 'Post not found');
   if (!['scheduled', 'approved'].includes(post.status)) throw httpError(409, `Only approved or scheduled posts can be published (this one is ${post.status})`);
+  if (getDealership().require_approval && !post.approved_at) throw httpError(403, 'A Dealer Admin needs to approve this post before it’s published');
   requireActive();
   if (!markPublishing(id)) throw httpError(409, 'Post is already being published');
 

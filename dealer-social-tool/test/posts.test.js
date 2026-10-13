@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { tenantTest as test } from './helpers.js';
+import { tenantTest as test, allowAutopilot } from './helpers.js';
 import { createPostsFromIdea } from '../src/services/content.js';
 import { approvePost, composeText, createPost, getPost, schedulePost, updatePost, validatePost, rejectPost } from '../src/services/posts.js';
 import { publishDuePosts, publishPost } from '../src/services/publisher.js';
@@ -29,6 +29,8 @@ test('bot-generated posts need approval in assist mode and are scheduled in auto
   const assist = await createPostsFromIdea({ postType: 'service_tip', platforms: ['facebook'], actor: 'bot', scheduledAt: when });
   assert.equal(assist.posts[0].status, 'pending_approval');
 
+  assert.throws(() => updateDealership({ autonomy: 'autopilot' }), /approval/, 'approval is required by default');
+  allowAutopilot();
   updateDealership({ autonomy: 'autopilot' });
   const auto = await createPostsFromIdea({ postType: 'service_tip', platforms: ['facebook'], actor: 'bot', scheduledAt: when });
   assert.equal(auto.posts[0].status, 'scheduled');
@@ -55,11 +57,15 @@ test('bot scheduling in assist mode waits for approval', (fixtures) => {
 });
 
 test('publishing fails cleanly without an account or with invalid content', async (fixtures) => {
-  const x = createPost({ platform: 'x', content: 'Hi', status: 'approved' });
+  const unapproved = createPost({ platform: 'facebook', content: 'Hi', status: 'approved' });
+  await assert.rejects(publishPost(unapproved.id), /needs to approve/, 'nothing is published without a recorded approval');
+  const x = createPost({ platform: 'x', content: 'Hi' });
+  approvePost(x.id);
   assert.equal((await publishPost(x.id)).status, 'failed');
   assert.match(getPost(x.id).error, /No X/);
 
-  const ig = createPost({ platform: 'instagram', content: 'No photo', status: 'approved' });
+  const ig = createPost({ platform: 'instagram', content: 'No photo' });
+  approvePost(ig.id);
   const failed = await publishPost(ig.id);
   assert.equal(failed.status, 'failed');
   assert.match(failed.error, /requires a photo/);

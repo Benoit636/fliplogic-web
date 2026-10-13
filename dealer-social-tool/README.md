@@ -13,6 +13,12 @@ owner) see every customer, your revenue and usage in an admin console. Stripe ha
 - **Pilot setup (Dealer #001, first admin, inviting staff):** [`docs/PILOT_SETUP.md`](docs/PILOT_SETUP.md)
 - **Step-by-step launch checklist (accounts to create, keys to paste):** [`docs/LAUNCH_CHECKLIST.md`](docs/LAUNCH_CHECKLIST.md)
 
+## Pilot workflow (Phase 1–3)
+
+- **Dealerships & logins:** `npm run create-dealer` creates a dealership (Dealer #001…) and a single-use setup link for its Dealer Admin; staff join by personal invite. See [`docs/PILOT_SETUP.md`](docs/PILOT_SETUP.md).
+- **Inventory:** CSV import with preview, matched by VIN then stock # (never duplicated), searchable list, vehicle → post in a few taps.
+- **Posts:** captions in English, French or both; a branded PNG image (logo, photo, price, contact; 3 styles × 3 sizes) with preview and download; every post needs a Dealer Admin's recorded approval, then a ready-to-post kit (copy caption, save image, I posted it).
+
 ## Create Post: the core workflow
 
 `Create Post` is the home screen. Five steps, all on one phone-friendly screen:

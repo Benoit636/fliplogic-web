@@ -20,6 +20,7 @@ export const PRESETS = {
       province: 'NB',
       timezone: 'America/Moncton',
       language: 'English and French',
+      caption_language: 'bilingual',
       distance_unit: 'km',
       default_hashtags: '#VWMoncton #Moncton #Volkswagen',
       brand_color: '#001E50',

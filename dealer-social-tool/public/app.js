@@ -1,4 +1,5 @@
 // Dealer Social Tool — single-page dashboard (no build step).
+import { TEMPLATES, SIZES, imageContent, renderPostImage, canvasToPng, savePng, loadImage } from './post-image.js';
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const view = $('#view');
@@ -38,7 +39,7 @@ const pIcon = (p) => PLATFORM_ICON[p] || '•';
 const STATUS_BADGE = {
   draft: ['Draft', ''],
   pending_approval: ['Needs approval', 'warn'],
-  approved: ['Approved', 'info'],
+  approved: ['Approved · ready to post', 'good'],
   scheduled: ['Scheduled', 'info'],
   publishing: ['Publishing…', 'info'],
   published: ['Published', 'good'],
@@ -108,6 +109,10 @@ function openModal(title, bodyHtml, { wide = false } = {}) {
   return { el: $('.modal', root), close };
 }
 
+// Pop-ups close with Escape and when you move to another screen.
+document.addEventListener('keydown', (e) => e.key === 'Escape' && $('#modal-root').firstChild && ($('#modal-root').innerHTML = ''));
+window.addEventListener('hashchange', () => ($('#modal-root').innerHTML = ''));
+
 // ---------- shared components ----------
 function postCard(p, { actions = true } = {}) {
   const warnings = p.warnings?.length ? `<div class="warn-list">⚠️ ${p.warnings.map(esc).join('<br>⚠️ ')}</div>` : '';
@@ -116,18 +121,22 @@ function postCard(p, { actions = true } = {}) {
   const m = p.metrics || {};
   const metrics =
     p.status === 'published' ? `<div class="small muted">👁 ${num(m.reach)} · ❤️ ${num(m.likes)} · 💬 ${num(m.comments)} · 🔁 ${num(m.shares)}</div>` : '';
+  const admin = isAdmin();
+  const live = isLivePlatform(p.platform);
   const buttons = !actions
     ? ''
     : `<div class="row">
-      <button class="small" data-edit="${p.id}">Edit</button>
-      ${p.status === 'pending_approval' || p.status === 'draft' ? `<button class="small good" data-approve="${p.id}">Approve</button>` : ''}
-      ${p.status === 'pending_approval' ? `<button class="small danger" data-reject="${p.id}">Reject</button>` : ''}
-      ${!['published', 'publishing'].includes(p.status) ? `<button class="small" data-publish="${p.id}">Publish now</button>` : ''}
+      <button class="small" data-edit="${p.id}">${admin || ['draft', 'rejected', 'failed'].includes(p.status) ? 'Edit' : 'Open'}</button>
+      ${admin && ['pending_approval', 'draft', 'rejected'].includes(p.status) ? `<button class="small good" data-approve="${p.id}">Approve</button>` : ''}
+      ${admin && p.status === 'pending_approval' ? `<button class="small danger" data-reject="${p.id}">Reject</button>` : ''}
+      ${!admin && ['draft', 'rejected'].includes(p.status) ? `<button class="small primary" data-submit="${p.id}">Send for approval</button>` : ''}
+      ${approvedPost(p) && !live ? `<button class="small primary" data-kit="${p.id}">Ready to post…</button>` : ''}
+      ${admin && live && !['published', 'publishing'].includes(p.status) ? `<button class="small" data-publish="${p.id}">Publish now</button>` : ''}
       ${p.external_url ? `<a class="btn small" href="${esc(p.external_url)}" target="_blank" rel="noopener">View ↗</a>` : ''}
     </div>`;
   return `<div class="post-card" data-post="${p.id}">
     <div class="row"><strong>${pIcon(p.platform)} ${esc(platformLabel(p.platform))}</strong><span class="spacer"></span>${statusBadge(p.status)}</div>
-    <div class="small muted">${esc(typeLabel(p.post_type))}${p.source !== 'manual' ? ` · by ${p.source === 'autopilot' ? 'autopilot' : 'AI'}` : ''} ${when ? `· ${when}` : ''}</div>
+    <div class="small muted">${esc(typeLabel(p.post_type))}${p.source !== 'manual' ? ` · by ${p.source === 'autopilot' ? 'autopilot' : 'AI'}` : ''} ${when ? `· ${when}` : ''}${p.approved_by_name && p.approved_at ? ` · ✅ ${esc(p.approved_by_name)}` : ''}</div>
     ${img}
     <div class="text">${esc(p.content)}</div>
     ${p.hashtags?.length ? `<div class="tags">${esc(p.hashtags.join(' '))}</div>` : ''}
@@ -142,7 +151,9 @@ function bindPostActions(root, refresh) {
     const b = e.target.closest('button');
     if (!b) return;
     if (b.dataset.edit) return openPostEditor(Number(b.dataset.edit), refresh);
-    if (b.dataset.approve) return act(b, () => api('POST', `/posts/${b.dataset.approve}/approve`), 'Approved').then(refresh);
+    if (b.dataset.approve) return act(b, () => api('POST', `/posts/${b.dataset.approve}/approve`), 'Approved · ready to post').then(refresh);
+    if (b.dataset.submit) return act(b, () => api('POST', `/posts/${b.dataset.submit}/submit`), 'Sent for approval').then(refresh);
+    if (b.dataset.kit) return openPostKit(Number(b.dataset.kit), refresh);
     if (b.dataset.reject) {
       const reason = prompt('Reason (optional) — helps the bot learn what you want:') ?? null;
       if (reason === null) return;
@@ -159,35 +170,41 @@ function bindPostActions(root, refresh) {
   });
 }
 
+const isLivePlatform = (platform) => !!state.livePlatforms?.has(platform);
+const approvedPost = (p) => !!p.approved_at && ['approved', 'scheduled'].includes(p.status);
+
 async function openPostEditor(id, onChange = () => {}) {
   const p = await api('GET', `/posts/${id}`);
   const rules = state.meta.platforms[p.platform];
-  const locked = ['published', 'publishing'].includes(p.status);
+  const admin = isAdmin();
+  const live = isLivePlatform(p.platform);
+  const locked = ['published', 'publishing'].includes(p.status) || (!admin && ['approved', 'scheduled', 'pending_approval'].includes(p.status));
+  const btn = (show, html) => (show ? html : '');
   const { el, close } = openModal(
     `${pIcon(p.platform)} ${platformLabel(p.platform)} post #${p.id}`,
     `
     <div class="stack">
-      <div class="row">${statusBadge(p.status)} <span class="muted small">${esc(typeLabel(p.post_type))}</span></div>
+      <div class="row">${statusBadge(p.status)} <span class="muted small">${esc(typeLabel(p.post_type))}</span>${p.language !== 'en' ? `<span class="badge">${esc(state.meta.languages?.[p.language] || p.language)}</span>` : ''}</div>
+      ${p.approved_by_name && p.approved_at ? `<div class="small muted">✅ Approved by ${esc(p.approved_by_name)} · ${fmtDate(p.approved_at)}</div>` : ''}
+      ${!admin && p.status === 'pending_approval' ? '<div class="banner info" style="margin:0">Waiting for a Dealer Admin to approve it.</div>' : ''}
+      ${p.media[0] ? `<img class="kit-image" src="${esc(p.media[0])}" alt="Post image">` : ''}
       <label class="field"><span>Post text</span><textarea id="pe-content" rows="9" ${locked ? 'disabled' : ''}>${esc(p.content)}</textarea></label>
       <div class="char-count" id="pe-count"></div>
       <label class="field"><span>Hashtags (space separated)</span><input id="pe-tags" value="${esc(p.hashtags.join(' '))}" ${locked ? 'disabled' : ''}></label>
-      <label class="field"><span>Photo / video URLs (one per line)${rules.requiresMedia ? ' — required' : ''}</span><textarea id="pe-media" rows="2" ${locked ? 'disabled' : ''}>${esc(p.media.join('\n'))}</textarea></label>
-      ${p.image_idea ? `<div class="small muted">📷 Photo idea: ${esc(p.image_idea)}</div>` : ''}
-      <label class="field"><span>Publish time</span><input type="datetime-local" id="pe-when" value="${toLocalInput(p.scheduled_at)}" ${locked ? 'disabled' : ''}></label>
+      ${btn(admin && live, `<label class="field"><span>Publish time</span><input type="datetime-local" id="pe-when" value="${toLocalInput(p.scheduled_at)}" ${locked ? 'disabled' : ''}></label>`)}
       ${!locked && state.meta.ai_enabled ? `<div class="row"><input id="pe-ai" placeholder="Ask the AI to rewrite: shorter, more fun, add a French version…"><button id="pe-rewrite">✨ Rewrite</button></div>` : ''}
-      ${p.error ? `<div style="color:var(--bad)">${esc(p.error)}</div>` : ''}
+      ${p.error ? `<div style="color:var(--bad)">${p.status === 'rejected' ? 'Reason: ' : ''}${esc(p.error)}</div>` : ''}
     </div>
     <div class="modal-foot">
-      ${
-        !locked
-          ? `<button class="danger" id="pe-delete">Delete</button><span class="spacer"></span>
+      ${btn(!['published', 'publishing'].includes(p.status) && (admin || p.status === 'draft'), '<button class="danger" id="pe-delete">Delete</button>')}
+      <span class="spacer"></span>
       <button id="pe-copy">📋 Copy text</button>
-      <button id="pe-posted" title="Use this when you posted it yourself">✔ I posted it</button>
-      <button id="pe-save">Save</button>
-      <button id="pe-schedule" class="primary">Approve & schedule</button>
-      <button id="pe-publish" class="good">Publish now</button>`
-          : `<button data-close>Close</button>`
-      }
+      ${btn(!locked, '<button id="pe-save">Save</button>')}
+      ${btn(!admin && ['draft', 'rejected', 'failed'].includes(p.status), '<button class="primary" id="pe-submit">Send for approval</button>')}
+      ${btn(admin && !approvedPost(p) && !locked, '<button class="good" id="pe-approve">Approve</button>')}
+      ${btn(approvedPost(p) && !live, '<button class="primary" id="pe-kit">Ready to post…</button>')}
+      ${btn(admin && live && !locked, '<button id="pe-schedule">Approve &amp; schedule</button><button class="good" id="pe-publish">Approve &amp; publish now</button>')}
+      ${btn(locked, '<button data-close>Close</button>')}
     </div>`,
   );
   const content = $('#pe-content', el);
@@ -202,20 +219,18 @@ async function openPostEditor(id, onChange = () => {}) {
   content.addEventListener('input', counter);
   tags.addEventListener('input', counter);
   counter();
-  if (locked) return;
 
-  const payload = () => ({
-    content: content.value,
-    hashtags: tags.value.split(/\s+/).filter(Boolean),
-    media: $('#pe-media', el).value.split(/\s+/).filter(Boolean),
-    scheduled_at: fromLocalInput($('#pe-when', el).value),
-  });
+  const payload = () => {
+    const body = { content: content.value, hashtags: tags.value.split(/\s+/).filter(Boolean) };
+    if ($('#pe-when', el)) body.scheduled_at = fromLocalInput($('#pe-when', el).value);
+    return body;
+  };
   const done = () => {
     close();
     onChange();
   };
-  $('#pe-save', el).onclick = (e) => act(e.target, () => api('PATCH', `/posts/${id}`, payload()), 'Saved').then((r) => r && done());
-  $('#pe-copy', el).onclick = async () => {
+  const on = (sel, fn) => $(sel, el) && ($(sel, el).onclick = fn);
+  on('#pe-copy', async () => {
     const text = composeClient({ content: content.value, hashtags: tags.value.split(/\s+/).filter(Boolean) });
     try {
       await navigator.clipboard.writeText(text);
@@ -225,17 +240,37 @@ async function openPostEditor(id, onChange = () => {}) {
       content.select();
       toast('Text selected. Press copy on your keyboard.');
     }
-  };
-  $('#pe-posted', el).onclick = (e) =>
+  });
+  on('#pe-save', (e) => act(e.target, () => api('PATCH', `/posts/${id}`, payload()), 'Saved').then((r) => r && done()));
+  on('#pe-submit', (e) =>
     act(
       e.target,
       async () => {
         await api('PATCH', `/posts/${id}`, payload());
-        return api('POST', `/posts/${id}/mark-posted`);
+        return api('POST', `/posts/${id}/submit`);
       },
-      'Marked as posted',
-    ).then((r) => r && done());
-  $('#pe-schedule', el).onclick = (e) =>
+      'Sent for approval',
+    ).then((r) => r && done()),
+  );
+  on('#pe-approve', (e) =>
+    act(
+      e.target,
+      async () => {
+        await api('PATCH', `/posts/${id}`, payload());
+        return api('POST', `/posts/${id}/approve`);
+      },
+      'Approved',
+    ).then((r) => {
+      if (!r) return;
+      done();
+      if (!live) openPostKit(id, onChange);
+    }),
+  );
+  on('#pe-kit', () => {
+    close();
+    openPostKit(id, onChange);
+  });
+  on('#pe-schedule', (e) =>
     act(
       e.target,
       async () => {
@@ -244,31 +279,34 @@ async function openPostEditor(id, onChange = () => {}) {
         return api('POST', `/posts/${id}/schedule`, { scheduled_at: body.scheduled_at || new Date().toISOString() });
       },
       (r) => `Scheduled for ${fmtDate(r.scheduled_at)}`,
-    ).then((r) => r && done());
-  $('#pe-publish', el).onclick = (e) =>
-    confirm('Publish this post right now?') &&
-    act(
-      e.target,
-      async () => {
-        await api('PATCH', `/posts/${id}`, payload());
-        return api('POST', `/posts/${id}/publish`);
-      },
-      (r) => (r.status === 'published' ? 'Published 🎉' : `Failed: ${r.error}`),
-    ).then((r) => r && done());
-  $('#pe-delete', el).onclick = (e) => confirm('Delete this post?') && act(e.target, () => api('DELETE', `/posts/${id}`), 'Deleted').then(done);
-  const rewrite = $('#pe-rewrite', el);
-  if (rewrite)
-    rewrite.onclick = (e) =>
+    ).then((r) => r && done()),
+  );
+  on(
+    '#pe-publish',
+    (e) =>
+      confirm('Publish this post right now?') &&
       act(
         e.target,
         async () => {
-          const r = await api('POST', `/posts/${id}/rewrite`, { instruction: $('#pe-ai', el).value || 'Make it more engaging' });
-          content.value = r.content;
-          tags.value = r.hashtags.join(' ');
-          counter();
+          await api('PATCH', `/posts/${id}`, payload());
+          return api('POST', `/posts/${id}/publish`);
         },
-        'Rewritten — review and save',
-      );
+        (r) => (r.status === 'published' ? 'Published 🎉' : `Failed: ${r.error}`),
+      ).then((r) => r && done()),
+  );
+  on('#pe-delete', (e) => confirm('Delete this post?') && act(e.target, () => api('DELETE', `/posts/${id}`), 'Deleted').then(done));
+  on('#pe-rewrite', (e) =>
+    act(
+      e.target,
+      async () => {
+        const r = await api('POST', `/posts/${id}/rewrite`, { instruction: $('#pe-ai', el).value || 'Make it more engaging' });
+        content.value = r.content;
+        tags.value = r.hashtags.join(' ');
+        counter();
+      },
+      'Rewritten — review and save',
+    ),
+  );
 }
 
 function platformChecks(name, selected = []) {
@@ -494,7 +532,7 @@ views.studio = async () => {
 
 views.approvals = async () => {
   const posts = await api('GET', '/posts?status=pending_approval');
-  view.innerHTML = `<div class="card"><div class="card-head"><h2>Posts waiting for your OK</h2><span class="muted small">The bot never publishes these until you approve (assist mode).</span>
+  view.innerHTML = `<div class="card"><div class="card-head"><h2>Posts waiting for your OK</h2><span class="muted small">Nothing is posted until a Dealer Admin approves it.</span>
     <div class="actions">${posts.length ? '<button class="good" id="approve-all">Approve all</button>' : ''}</div></div>
     <div class="post-grid" id="approval-list">${posts.map((p) => postCard(p)).join('') || '<div class="empty" style="grid-column:1/-1">Nothing waiting. 🎉</div>'}</div></div>`;
   bindPostActions($('#approval-list'), () => route());
@@ -548,23 +586,27 @@ views.posts = async () => {
   const params = new URLSearchParams(location.hash.split('?')[1] || '');
   const status = params.get('status') || '';
   const platform = params.get('platform') || '';
-  const posts = await api('GET', `/posts?${new URLSearchParams({ ...(status && { status }), ...(platform && { platform }) })}`);
-  const filters = ['', ...state.meta.post_statuses];
-  view.innerHTML = `<div class="card">
-    <div class="tabs">${filters.map((s) => `<button class="${s === status ? 'active' : ''}" data-status="${s}">${s ? STATUS_BADGE[s][0] : 'All'}</button>`).join('')}
+  const posts = await api('GET', `/posts?${new URLSearchParams({ ...(status && { status }), ...(platform && { platform }), limit: '200' })}`);
+  const filters = [
+    ['', 'All'],
+    ['draft', 'Drafts'],
+    ['pending_approval', 'Needs approval'],
+    ['approved,scheduled', 'Ready to post'],
+    ['published', 'Posted'],
+    ['rejected', 'Rejected'],
+  ];
+  view.innerHTML = `<div class="stack">
+    <div class="card inv-toolbar"><div class="row">
+      <div class="tabs" style="margin:0">${filters.map(([s, l]) => `<button class="${s === status ? 'active' : ''}" data-status="${s}">${l}</button>`).join('')}</div>
       <select id="pf" style="width:auto;margin-left:auto"><option value="">All platforms</option>${Object.entries(state.meta.platforms)
         .map(([k, p]) => `<option value="${k}" ${k === platform ? 'selected' : ''}>${esc(p.label)}</option>`)
-        .join('')}</select></div>
-    <div class="table-wrap"><table><tr><th></th><th>Post</th><th>Type</th><th>Status</th><th>When</th><th class="num">Reach</th><th class="num">Likes</th><th></th></tr>
-    ${posts.map((p) => `<tr><td>${pIcon(p.platform)}</td><td style="max-width:420px"><div class="clip">${esc(p.content.split('\n')[0])}</div><div class="small muted">#${p.id} · ${esc(p.source)}</div></td><td class="small">${esc(typeLabel(p.post_type))}</td><td>${statusBadge(p.status)}</td><td class="small">${fmtDate(p.published_at || p.scheduled_at || p.created_at)}</td><td class="num">${p.status === 'published' ? num(p.metrics.reach) : ''}</td><td class="num">${p.status === 'published' ? num(p.metrics.likes) : ''}</td><td><button class="small" data-edit="${p.id}">Open</button></td></tr>`).join('') || '<tr><td colspan="8"><div class="empty">No posts</div></td></tr>'}
-    </table></div></div>`;
+        .join('')}</select></div></div>
+    <div class="post-grid" id="post-list">${posts.map((p) => postCard(p)).join('') || `<div class="empty" style="grid-column:1/-1">${status === 'approved,scheduled' ? 'Nothing approved and waiting to be posted.' : 'No posts here yet.'} <a href="#/create">Create a post</a></div>`}</div>
+  </div>`;
   const go = (s, pf) => (location.hash = `#/posts?${new URLSearchParams({ ...(s && { status: s }), ...(pf && { platform: pf }) })}`);
   $$('[data-status]').forEach((b) => (b.onclick = () => go(b.dataset.status, platform)));
   $('#pf').onchange = (e) => go(status, e.target.value);
-  view.onclick = (e) => {
-    const b = e.target.closest('[data-edit]');
-    if (b) openPostEditor(Number(b.dataset.edit), () => route());
-  };
+  bindPostActions($('#post-list'), () => route());
 };
 
 views.inbox = async () => {
@@ -1091,9 +1133,12 @@ views.settings = async () => {
         ${field('phone', 'Phone')}${field('website', 'Website', 'input', 'https://www.yourdealer.ca')}
         ${color('brand_color', 'Main brand colour')}${color('accent_color', 'Accent colour')}
         ${field('brand_voice', 'Brand voice', 'textarea', 'Friendly, upbeat, community-focused…')}
-        ${field('call_to_action', 'Default call to action')}${field('default_hashtags', 'Always-on hashtags', 'input', '#YourDealer #YourCity')}
-        ${field('compliance_notes', 'Compliance / legal line (added when prices are shown)', 'textarea')}
-        ${field('language', 'Post language(s)', 'input', 'English, or English and French')}
+        <label class="field"><span>Captions are written in</span><select name="caption_language">${Object.entries(state.meta.languages || { en: 'English' })
+          .map(([k, l]) => `<option value="${k}" ${d.caption_language === k ? 'selected' : ''}>${esc(l)}</option>`)
+          .join('')}</select></label>${field('default_hashtags', 'Always-on hashtags', 'input', '#YourDealer #YourCity')}
+        ${field('call_to_action', 'Call to action (English)')}${field('call_to_action_fr', 'Call to action (French)', 'input', 'Réservez votre essai routier!')}
+        ${field('compliance_notes', 'Legal line, English (added when prices are shown)', 'textarea')}
+        ${field('compliance_notes_fr', 'Legal line, French', 'textarea', 'Taxes et frais en sus.')}
         <label class="field"><span>Odometer unit</span><select name="distance_unit"><option value="km" ${d.distance_unit === 'km' ? 'selected' : ''}>Kilometres</option><option value="mi" ${d.distance_unit === 'mi' ? 'selected' : ''}>Miles</option></select></label>
         <label class="field"><span>Time zone (autopilot schedules use it)</span><select name="timezone">${timezones(d.timezone)}</select></label>
         <label class="field full"><span>Inventory feed URL (CSV from your DMS or website provider — synced every 6 hours, Pro plan)</span><input name="inventory_feed_url" value="${esc(d.inventory_feed_url)}" placeholder="https://…/inventory.csv"></label>
@@ -1319,7 +1364,19 @@ const STEPS = ['New or used', 'Goal', 'Details', 'Review & post'];
 let wiz = freshWizard();
 
 function freshWizard() {
-  return { step: 'condition', condition: null, objective: null, details: {}, photos: [], vehicleId: null, posts: [], include: {}, results: null };
+  return {
+    step: 'condition',
+    condition: null,
+    objective: null,
+    details: {},
+    photos: [],
+    vehicleId: null,
+    posts: [],
+    include: {},
+    results: null,
+    language: state.dealership?.caption_language || 'en',
+    design: { on: true, template: 'showcase', size: 'square', photo: 0 },
+  };
 }
 
 const isManager = () => isAdmin();
@@ -1640,11 +1697,13 @@ async function generate(btn) {
       media: wiz.photos,
       vehicle_id: wiz.vehicleId || undefined,
       platforms,
+      language: wiz.language,
     });
     // The new version replaces the drafts from the previous attempt (only once it exists).
     for (const p of previous) if (p.status === 'draft') await api('DELETE', `/posts/${p.id}`).catch(() => {});
     wiz.posts = r.posts;
-    wiz.include = Object.fromEntries(r.posts.map((p) => [p.id, !(p.platform === 'instagram' && !p.media.length)]));
+    wiz.include = Object.fromEntries(r.posts.map((p) => [p.id, !(p.platform === 'instagram' && !p.media.length && !wiz.design.on)]));
+    if (wiz.design.photo >= wiz.photos.length) wiz.design.photo = 0;
     goTo('review');
   } catch (err) {
     locked.forEach((b) => (b.disabled = false));
@@ -1656,46 +1715,121 @@ async function generate(btn) {
   }
 }
 
+// ---------- post image (branded PNG) ----------
+let imageJob = 0;
+
+/** Photos must come from our own server to be drawn into a PNG: copy inventory photos from the dealer's website first. */
+async function sameOriginPhoto(src) {
+  if (!src || src.startsWith('data:') || src.startsWith('/') || src.startsWith(location.origin)) return src;
+  wiz.imported ??= {};
+  if (!wiz.imported[src]) wiz.imported[src] = (await api('POST', '/media/import', { url: src })).url;
+  return wiz.imported[src];
+}
+
+async function drawWizardImage() {
+  const job = ++imageJob;
+  const src = wiz.photos[wiz.design.photo] ?? wiz.photos[0] ?? null;
+  let photoUrl = null;
+  try {
+    photoUrl = await sameOriginPhoto(src);
+  } catch (err) {
+    toast(`Couldn’t use that photo: ${err.message}`, 'error');
+  }
+  const [photo, logo] = await Promise.all([loadImage(photoUrl), loadImage(state.dealership.logo_url)]);
+  const content = imageContent({ objectiveKey: wiz.objective, labels: state.meta.image_labels, details: wiz.details, dealer: state.dealership, language: wiz.language });
+  const canvas = await renderPostImage({ template: wiz.design.template, size: wiz.design.size, content, dealer: state.dealership, photo, logo });
+  const blob = await canvasToPng(canvas);
+  if (job !== imageJob) return null; // a newer drawing replaced this one
+  wiz.imageBlob = blob;
+  return blob;
+}
+
+const slug = (s) =>
+  String(s || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase();
+const imageFileName = (post) => `${slug(state.dealership?.name) || 'post'}-${slug(post?.title || vehicleName(wiz.details || {})) || 'vehicle'}.png`;
+
 async function renderReview() {
   const accounts = await api('GET', '/accounts');
   const live = new Set(liveAccounts(accounts).map((a) => a.platform));
   const manager = isManager();
+  const d = wiz.design;
+  const tabs = (id, items, current) =>
+    `<div class="tabs" id="${id}" style="margin:0">${items.map(([k, l]) => `<button type="button" data-v="${k}" class="${k === current ? 'active' : ''}">${l}</button>`).join('')}</div>`;
   const cards = wiz.posts
     .map((p) => {
       const rules = state.meta.platforms[p.platform];
       const connected = live.has(p.platform);
-      const needsPhoto = rules.requiresMedia && !p.media.length;
+      const needsPhoto = rules.requiresMedia && !p.media.length && !d.on;
       return `<article class="variant ${wiz.include[p.id] ? '' : 'off'}" data-post="${p.id}">
         <header class="variant-head">
           <label class="variant-toggle"><input type="checkbox" data-include="${p.id}" ${wiz.include[p.id] ? 'checked' : ''} ${needsPhoto ? 'disabled' : ''}> <strong>${pIcon(p.platform)} ${esc(rules.label)}</strong></label>
           <span class="badge ${connected ? 'good' : ''}">${connected ? 'Connected' : 'Copy & post yourself'}</span>
         </header>
-        ${needsPhoto ? `<div class="small" style="color:var(--warn)">${esc(rules.label)} needs a photo. Go back and add one to post here.</div>` : ''}
-        ${p.media[0] ? `<img class="variant-photo" src="${esc(p.media[0])}" alt="">` : ''}
+        ${needsPhoto ? `<div class="small" style="color:var(--warn)">${esc(rules.label)} needs an image. Turn on the post image or add a photo.</div>` : ''}
         <textarea class="variant-text" data-content="${p.id}" aria-label="${esc(rules.label)} post text">${esc(p.content)}</textarea>
         <input class="variant-tags" data-tags="${p.id}" value="${esc(p.hashtags.join(' '))}" aria-label="Hashtags" placeholder="#hashtags">
         <div class="char-count" data-count="${p.id}"></div>
       </article>`;
     })
     .join('');
+  const noneConnected = !wiz.posts.some((p) => live.has(p.platform));
   view.innerHTML = `<div class="create">
     ${stepper(3)}
     <div class="row"><button class="small" id="back">← Change details</button><span class="spacer"></span><button class="small" id="again">↻ Try another version</button></div>
-    <h2 class="create-h">Here’s your post. Edit anything, then choose where it goes.</h2>
+    <h2 class="create-h">Here’s your post. Check the image and text, then ${manager ? 'approve it' : 'send it for approval'}.</h2>
+    <section class="card image-card">
+      <div class="image-preview ${d.on ? '' : 'off'}"><img id="img-preview" alt="Post image preview"><span class="image-busy" id="img-busy">Drawing…</span></div>
+      <div class="stack image-controls">
+        <div class="row"><h3 style="margin:0">Post image</h3><span class="spacer"></span><label class="variant-toggle small">Use it <input type="checkbox" id="img-on" ${d.on ? 'checked' : ''}></label></div>
+        <div class="field"><span class="small muted">Caption &amp; image language</span>${tabs('lang', [['en', 'English'], ['fr', 'Français'], ['bilingual', 'EN + FR']], wiz.language)}</div>
+        <div class="field"><span class="small muted">Style</span>${tabs('img-template', TEMPLATES.map((t) => [t.key, t.label]), d.template)}</div>
+        <div class="field"><span class="small muted">Size</span>${tabs('img-size', Object.entries(SIZES).map(([k, s]) => [k, s.label]), d.size)}<span class="small muted" id="size-hint">${esc(SIZES[d.size].hint)}</span></div>
+        ${
+          wiz.photos.length > 1
+            ? `<div class="field"><span class="small muted">Photo</span><div class="photo-pick">${wiz.photos.map((u, i) => `<button type="button" class="${i === d.photo ? 'selected' : ''}" data-photo="${i}" aria-label="Use photo ${i + 1}"><img src="${esc(u)}" alt=""></button>`).join('')}</div></div>`
+            : wiz.photos.length
+              ? ''
+              : '<p class="small muted" style="margin:0">No photo yet: the image uses your brand colours. Add a photo in the previous step for best results.</p>'
+        }
+        <div class="row"><button type="button" id="img-download">⬇ Download PNG</button>${state.dealership.logo_url ? '' : '<a class="small" href="#/settings">Add your logo →</a>'}</div>
+      </div>
+    </section>
     <div class="variants">${cards}</div>
     <div class="schedule-row" id="schedule-row" hidden>
       <label class="field" for="when"><span>Post on</span><input type="datetime-local" id="when" value="${toLocalInput(new Date(Date.now() + 3600_000).toISOString())}"></label>
-      <button class="primary" id="confirm-schedule">Schedule</button>
+      <button class="primary" id="confirm-schedule">Approve &amp; schedule</button>
     </div>
     <div class="action-bar">
       ${
         manager
-          ? `<button class="primary big" id="publish"></button><button id="schedule">🕒 Schedule</button>`
+          ? `<button class="primary big" id="publish"></button>${noneConnected ? '' : '<button id="schedule">🕒 Schedule</button>'}`
           : `<button class="primary big" id="submit">Send to my manager for approval</button>`
       }
       <button id="save-draft">Save draft</button>
     </div>
   </div>`;
+
+  const preview = $('#img-preview');
+  const redraw = async () => {
+    if (!wiz.design.on) return;
+    $('#img-busy').hidden = false;
+    wiz.imagePromise = drawWizardImage();
+    const blob = await wiz.imagePromise.catch((err) => {
+      toast(err.message, 'error');
+      return null;
+    });
+    if (!blob || !preview.isConnected) return;
+    if (preview.dataset.url) URL.revokeObjectURL(preview.dataset.url);
+    preview.dataset.url = URL.createObjectURL(blob);
+    preview.src = preview.dataset.url;
+    $('#img-busy').hidden = true;
+  };
+  redraw();
 
   const counter = (id) => {
     const p = wiz.posts.find((x) => x.id === id);
@@ -1709,19 +1843,14 @@ async function renderReview() {
   const refreshButtons = () => {
     const connectedCount = selected().filter((p) => live.has(p.platform)).length;
     const pub = $('#publish');
-    if (pub)
-      pub.textContent = connectedCount ? `Publish now (${connectedCount} account${connectedCount === 1 ? '' : 's'})` : 'Done: get my posts ready to copy';
+    if (pub) pub.textContent = connectedCount ? `Approve & publish now (${connectedCount} account${connectedCount === 1 ? '' : 's'})` : 'Approve & get it ready to post';
     const sch = $('#schedule');
-    if (sch) {
-      sch.disabled = !connectedCount;
-      sch.title = connectedCount ? '' : 'Connect an account in Settings to schedule posts';
-    }
+    if (sch) sch.disabled = !connectedCount;
     for (const id of ['publish', 'submit', 'save-draft']) if ($(`#${id}`)) $(`#${id}`).disabled = !selected().length;
   };
   for (const p of wiz.posts) counter(p.id);
   refreshButtons();
 
-  // Keep edits in memory as the manager types, so going back and forth never loses them.
   view.oninput = (e) => {
     const id = Number(e.target.dataset.content || e.target.dataset.tags);
     if (!id) return;
@@ -1735,11 +1864,51 @@ async function renderReview() {
     counter(id);
   };
   view.onchange = (e) => {
+    if (e.target.id === 'img-on') {
+      wiz.design.on = e.target.checked;
+      return goTo('review');
+    }
     const id = Number(e.target.dataset.include);
     if (!id) return;
     wiz.include[id] = e.target.checked;
     e.target.closest('.variant').classList.toggle('off', !e.target.checked);
     refreshButtons();
+  };
+  const tabGroup = (id, onPick) => {
+    $(`#${id}`).onclick = (e) => {
+      const b = e.target.closest('[data-v]');
+      if (!b || b.classList.contains('active')) return;
+      $$(`#${id} button`).forEach((x) => x.classList.toggle('active', x === b));
+      onPick(b.dataset.v);
+    };
+  };
+  tabGroup('img-template', (v) => {
+    wiz.design.template = v;
+    redraw();
+  });
+  tabGroup('img-size', (v) => {
+    wiz.design.size = v;
+    $('#size-hint').textContent = SIZES[v].hint;
+    redraw();
+  });
+  tabGroup('lang', (v) => {
+    wiz.language = v;
+    generate($('#again')); // captions are rewritten in the new language; the image follows
+  });
+  const pickPhoto = $('.photo-pick');
+  if (pickPhoto)
+    pickPhoto.onclick = (e) => {
+      const b = e.target.closest('[data-photo]');
+      if (!b) return;
+      wiz.design.photo = Number(b.dataset.photo);
+      $$('.photo-pick button').forEach((x) => x.classList.toggle('selected', x === b));
+      redraw();
+    };
+  $('#img-download').onclick = async (e) => {
+    const blob = wiz.design.on ? await wiz.imagePromise : null;
+    if (!blob) return toast('Turn on the post image first', 'error');
+    const r = await savePng(blob, imageFileName(wiz.posts[0]));
+    if (r === 'downloaded') toast('Image downloaded');
   };
   $('#back').onclick = () => goTo('details');
   $('#again').onclick = (e) => generate(e.target);
@@ -1771,15 +1940,32 @@ async function renderReview() {
     };
 }
 
-/** Save edits, drop unticked platforms, then publish / schedule / submit / keep as draft. */
+/** Upload the finished PNG once; every platform version of the post uses it as its first image. */
+async function uploadWizardImage() {
+  if (!wiz.design.on) return null;
+  const blob = await wiz.imagePromise;
+  if (!blob) throw new Error('The post image isn’t ready yet. Try again in a second.');
+  const res = await fetch('/api/media', { method: 'POST', headers: { 'content-type': 'image/png', 'x-requested-with': 'fetch' }, body: blob });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Couldn’t save the post image');
+  return data.url;
+}
+
+/**
+ * Save edits and the image, drop unticked platforms, then: Dealer Admin approves (and publishes to
+ * connected accounts, or gets a copy-and-post kit), Dealer Staff send it for approval, or keep a draft.
+ */
 async function finish(mode, live, when) {
   const results = [];
+  const png = await uploadWizardImage();
+  const media = png ? [png, ...wiz.photos].slice(0, 10) : wiz.photos.slice(0, 10);
+  const design = png ? { ...wiz.design, image: png, language: wiz.language } : {};
   for (const p of wiz.posts) {
     if (!wiz.include[p.id]) {
       await api('DELETE', `/posts/${p.id}`).catch(() => {});
       continue;
     }
-    let post = await api('PATCH', `/posts/${p.id}`, { content: p.content, hashtags: p.hashtags });
+    let post = await api('PATCH', `/posts/${p.id}`, { content: p.content, hashtags: p.hashtags, media, design, language: wiz.language });
     const connected = live.has(p.platform);
     let outcome = 'draft';
     if (mode === 'submit') {
@@ -1792,6 +1978,7 @@ async function finish(mode, live, when) {
       post = await api('POST', `/posts/${p.id}/schedule`, { scheduled_at: when });
       outcome = 'scheduled';
     } else if (!connected && mode !== 'draft') {
+      post = await api('POST', `/posts/${p.id}/approve`);
       outcome = 'manual';
     }
     results.push({ post, outcome });
@@ -1799,6 +1986,69 @@ async function finish(mode, live, when) {
   wiz.posts = [];
   refreshBadges();
   return results;
+}
+
+/** "Ready to post" kit for an approved post: image, caption, copy / save / open / I posted it. */
+function kitCard(post) {
+  const image = post.media[0];
+  return `<div class="card manual kit" data-post="${post.id}">
+    <div class="card-head"><h3>${pIcon(post.platform)} ${esc(platformLabel(post.platform))}</h3><span class="badge ${post.status === 'published' ? 'good' : ''}" data-state="${post.id}">${post.status === 'published' ? 'Posted' : 'Not posted yet'}</span></div>
+    ${post.approved_by_name ? `<div class="small muted">✅ Approved by ${esc(post.approved_by_name)} ${post.approved_at ? ago(post.approved_at) : ''}</div>` : ''}
+    ${image ? `<img class="kit-image" src="${esc(image)}" alt="Post image">` : ''}
+    <textarea class="variant-text" readonly>${esc(composeClient(post))}</textarea>
+    <div class="row">
+      <button class="primary" data-copy="${post.id}">📋 Copy caption</button>
+      ${image ? `<button data-save="${post.id}">⬇ Save image</button>` : ''}
+      <a class="btn" href="${PLATFORM_HOME[post.platform]}" target="_blank" rel="noopener">Open ${esc(platformLabel(post.platform))} ↗</a>
+      ${post.status === 'published' ? '' : `<button data-posted="${post.id}">✔ I posted it</button>`}
+    </div></div>`;
+}
+
+function bindKit(root, posts) {
+  const find = (id) => posts.find((p) => p.id === Number(id));
+  root.addEventListener('click', async (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.copy) {
+      const text = composeClient(find(b.dataset.copy));
+      try {
+        await navigator.clipboard.writeText(text);
+        toast('Caption copied. Paste it into the app.');
+      } catch {
+        const ta = b.closest('.card').querySelector('textarea');
+        ta.focus();
+        ta.select();
+        toast('Text selected. Press copy on your keyboard.');
+      }
+    }
+    if (b.dataset.save) {
+      const post = find(b.dataset.save);
+      await act(b, async () => {
+        const res = await fetch(post.media[0]);
+        if (!res.ok) throw new Error('Couldn’t load the image');
+        const blob = await res.blob();
+        const r = await savePng(blob.type === 'image/png' ? blob : new Blob([blob], { type: blob.type }), imageFileName(post));
+        if (r === 'downloaded') toast('Image downloaded');
+      });
+    }
+    if (b.dataset.posted) {
+      const r = await act(b, () => api('POST', `/posts/${b.dataset.posted}/mark-posted`), 'Marked as posted');
+      if (!r) return;
+      const badge = $(`[data-state="${b.dataset.posted}"]`, root);
+      if (badge) {
+        badge.textContent = 'Posted';
+        badge.classList.add('good');
+      }
+      b.remove();
+    }
+  });
+}
+
+async function openPostKit(id, onChange = () => {}) {
+  const post = await api('GET', `/posts/${id}`);
+  const { el } = openModal('Ready to post', `<div class="stack">${kitCard(post)}<p class="small muted" style="margin:0">Copy the caption, save the image, then post it in the ${esc(platformLabel(post.platform))} app and tap <strong>I posted it</strong>.</p></div>`, { wide: true });
+  bindKit(el, [post]);
+  el.addEventListener('click', (e) => e.target.closest('[data-posted]') && setTimeout(onChange, 500));
 }
 
 function renderDone() {
@@ -1809,40 +2059,27 @@ function renderDone() {
       return `<li>✅ Posted to ${label}${post.external_url ? ` · <a href="${esc(post.external_url)}" target="_blank" rel="noopener">View post ↗</a>` : ''}</li>`;
     if (outcome === 'failed')
       return `<li>⚠️ ${label} didn’t go through: ${esc(post.error || 'unknown error')} <button class="small" data-edit="${post.id}">Fix &amp; retry</button></li>`;
-    if (outcome === 'scheduled') return `<li>🕒 ${label} scheduled for ${fmtDate(post.scheduled_at)}</li>`;
+    if (outcome === 'scheduled') return `<li>🕒 ${label} approved and scheduled for ${fmtDate(post.scheduled_at)}</li>`;
     if (outcome === 'submitted') return `<li>📨 ${label} sent to your manager for approval</li>`;
     if (outcome === 'draft') return `<li>💾 ${label} saved as a draft in My Posts</li>`;
     return '';
   };
   const manual = r.filter((x) => x.outcome === 'manual');
-  const canShare = !!navigator.canShare;
+  const submitted = r.length && r.every((x) => x.outcome === 'submitted');
   view.innerHTML = `<div class="create">
-    <h2 class="create-q">${manual.length && manual.length === r.length ? 'Your post is ready to share 🎉' : 'Done! 🎉'}</h2>
+    <h2 class="create-q">${submitted ? 'Sent for approval 📨' : manual.length && manual.length === r.length ? 'Approved and ready to post 🎉' : 'Done! 🎉'}</h2>
+    ${submitted ? '<p class="muted">Your manager will see it in Approvals. Once it’s approved, you’ll find it under My Posts → Ready to post.</p>' : ''}
     ${r.some((x) => x.outcome !== 'manual') ? `<ul class="result-list">${r.map(line).join('')}</ul>` : ''}
     ${
       manual.length
-        ? `<div class="stack"><p class="muted">These accounts aren’t connected, so copy each post and paste it into the app. <a href="#/settings">Connect them</a> to publish in one tap next time.</p>
-        ${manual
-          .map(
-            ({ post }) => `<div class="card manual" data-post="${post.id}">
-          <div class="card-head"><h3>${pIcon(post.platform)} ${esc(platformLabel(post.platform))}</h3><span class="badge" data-state="${post.id}">Not posted yet</span></div>
-          ${post.media[0] ? `<img class="variant-photo" src="${esc(post.media[0])}" alt="">` : ''}
-          <textarea class="variant-text" readonly>${esc(composeClient(post))}</textarea>
-          <div class="row">
-            <button class="primary" data-copy="${post.id}">📋 Copy text</button>
-            ${canShare ? `<button data-share="${post.id}">📤 Share…</button>` : ''}
-            ${post.media[0] ? `<a class="btn" href="${esc(post.media[0])}" download>⬇ Save photo</a>` : ''}
-            <a class="btn" href="${PLATFORM_HOME[post.platform]}" target="_blank" rel="noopener">Open ${esc(platformLabel(post.platform))} ↗</a>
-            <button data-posted="${post.id}">✔ I posted it</button>
-          </div></div>`,
-          )
-          .join('')}</div>`
+        ? `<div class="stack"><p class="muted" style="margin:0">Facebook, Instagram and LinkedIn aren’t connected, so post it yourself: copy the caption, save the image, open the app, then tap <strong>I posted it</strong>.</p>
+        ${manual.map(({ post }) => kitCard(post)).join('')}</div>`
         : ''
     }
     <div class="action-bar static"><button class="primary big" id="another">✍️ Create another post</button><a class="btn" href="#/posts">My Posts</a></div>
   </div>`;
-  const find = (id) => manual.find((x) => x.post.id === Number(id))?.post;
-  view.onclick = async (e) => {
+  bindKit(view, manual.map((x) => x.post));
+  view.onclick = (e) => {
     const b = e.target.closest('button');
     if (!b) return;
     if (b.id === 'another') {
@@ -1850,41 +2087,6 @@ function renderDone() {
       return goTo('condition');
     }
     if (b.dataset.edit) return openPostEditor(Number(b.dataset.edit), () => {});
-    if (b.dataset.copy) {
-      const text = composeClient(find(b.dataset.copy));
-      try {
-        await navigator.clipboard.writeText(text);
-        toast('Copied. Paste it into the app.');
-      } catch {
-        const ta = b.closest('.card').querySelector('textarea');
-        ta.focus();
-        ta.select();
-        toast('Text selected. Press copy on your keyboard.');
-      }
-    }
-    if (b.dataset.share) {
-      const post = find(b.dataset.share);
-      try {
-        const data = { text: composeClient(post) };
-        if (post.media[0]) {
-          const blob = await (await fetch(post.media[0])).blob();
-          const file = new File([blob], 'vehicle.jpg', { type: blob.type || 'image/jpeg' });
-          if (navigator.canShare({ files: [file] })) data.files = [file];
-        }
-        await navigator.share(data);
-      } catch (err) {
-        if (err.name !== 'AbortError') toast('Sharing isn’t available here. Use Copy text instead.', 'error');
-      }
-    }
-    if (b.dataset.posted) {
-      await act(b, () => api('POST', `/posts/${b.dataset.posted}/mark-posted`), 'Marked as posted');
-      const badge = $(`[data-state="${b.dataset.posted}"]`);
-      if (badge) {
-        badge.textContent = 'Posted';
-        badge.classList.add('good');
-      }
-      b.disabled = true;
-    }
   };
 }
 
@@ -1970,9 +2172,10 @@ async function loadShell() {
     renderUserBox();
     throw new Error('no dealership');
   }
-  const [meta, dealer] = await Promise.all([api('GET', '/meta'), api('GET', '/dealership')]);
+  const [meta, dealer, accounts] = await Promise.all([api('GET', '/meta'), api('GET', '/dealership'), api('GET', '/accounts')]);
   state.meta = meta;
   state.dealership = dealer;
+  state.livePlatforms = new Set(liveAccounts(accounts).map((a) => a.platform));
   renderUserBox();
   renderBanner();
   $('#dealer-name').textContent = dealer.dealer_number ? `${dealer.name} · #${dealer.dealer_number}` : dealer.name;

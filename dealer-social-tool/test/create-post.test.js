@@ -89,7 +89,10 @@ test('photos: only real JPG/PNG/WebP files are stored', () => {
 
 test('posting by hand is recorded honestly: no invented engagement', async () => {
   const { posts } = await createPostsFromIdea({ postType: 'used_trade_in', details: used, platforms: ['linkedin'] });
+  assert.throws(() => markPostedManually(posts[0].id), /needs to approve/, 'not before a Dealer Admin approves it');
+  approvePost(posts[0].id, 'user', { id: null, name: 'Gina' });
   const p = markPostedManually(posts[0].id, { url: 'https://www.linkedin.com/feed/update/1' });
+  assert.equal(p.approved_by_name, 'Gina');
   assert.equal(p.status, 'published');
   assert.equal(p.external_id, null);
   await refreshMetrics();

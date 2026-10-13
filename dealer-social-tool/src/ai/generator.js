@@ -35,7 +35,7 @@ export function detailsFromVehicle(v) {
  * older post types from an inventory `vehicle`.
  * Returns one variant per requested platform plus which engine wrote it.
  */
-export async function generatePostVariants({ postType, vehicle = null, details = null, platforms, instructions = '' }) {
+export async function generatePostVariants({ postType, vehicle = null, details = null, platforms, instructions = '', language = 'en' }) {
   const objective = OBJECTIVE_BY_KEY[postType];
   if (!POST_TYPE_KEYS.includes(postType)) throw Object.assign(new Error(`Unknown post type ${postType}`), { status: 400 });
   const wanted = [...new Set(platforms)].filter((p) => PLATFORM_KEYS.includes(p));
@@ -64,7 +64,7 @@ export async function generatePostVariants({ postType, vehicle = null, details =
         {
           role: 'user',
           content: objective
-            ? objectiveRequest({ objective, details: facts, platforms: wanted, unit: dealer.distance_unit, instructions })
+            ? objectiveRequest({ objective, details: facts, platforms: wanted, unit: dealer.distance_unit, instructions, language })
             : postRequest({ postType, vehicle, platforms: wanted, instructions, unit: dealer.distance_unit }),
         },
       ],
@@ -83,7 +83,7 @@ export async function generatePostVariants({ postType, vehicle = null, details =
       const v =
         byPlatform.get(platform) ||
         (objective
-          ? writeObjectivePost({ objectiveKey: postType, details: facts, dealer, platform, rules: PLATFORMS[platform] })
+          ? writeObjectivePost({ objectiveKey: postType, details: facts, dealer, platform, rules: PLATFORMS[platform], language })
           : fallbackPost({ postType, vehicle, platform, instructions, dealer }));
       return { ...v, platform, hashtags: v.hashtags.map((t) => (t.startsWith('#') ? t : `#${t}`)) };
     }),

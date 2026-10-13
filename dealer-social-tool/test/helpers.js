@@ -1,6 +1,6 @@
 import { test } from 'node:test';
-import { openDb } from '../src/db.js';
-import { enterTenant } from '../src/tenant.js';
+import { openDb, run } from '../src/db.js';
+import { enterTenant, tenantId } from '../src/tenant.js';
 import { signup } from '../src/services/auth.js';
 import { updateDealership } from '../src/services/dealership.js';
 import { createAccount } from '../src/services/accounts.js';
@@ -30,6 +30,11 @@ export function addDealership(email, name) {
   });
   const suv = createVehicle({ year: 2024, make: 'Volkswagen', model: 'Tiguan', price: 36495, mileage: 18000 });
   return { truck, suv, user, dealership, token };
+}
+
+/** Turn off "every post needs a Dealer Admin's approval" for the current dealership (to test full autopilot). */
+export function allowAutopilot() {
+  run('UPDATE dealerships SET require_approval = 0 WHERE id = ?', tenantId());
 }
 
 /** A test that starts with a fresh database and tenant. */

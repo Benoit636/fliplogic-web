@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import express from 'express';
 import { PLATFORMS, POST_TYPES, POST_STATUSES, GENERAL_POST_TYPES, config } from '../config.js';
-import { OBJECTIVES, FIELDS } from '../shared/objectives.js';
+import { OBJECTIVES, FIELDS, IMAGE_LABELS, LANGUAGES } from '../shared/objectives.js';
 import { all } from '../db.js';
 import { tenantId } from '../tenant.js';
 import { PLANS } from '../plans.js';
@@ -25,6 +25,7 @@ import {
   unschedulePost,
   statusCounts,
   markPostedManually,
+  isApproved,
 } from '../services/posts.js';
 import { createPostsFromIdea } from '../services/content.js';
 import { publishPost, refreshMetrics } from '../services/publisher.js';
@@ -45,7 +46,7 @@ import { listTeam, inviteMember, revokeInvite, changeRole, removeMember } from '
 import { createCheckout, createPortal, stripeEnabled } from '../services/billing.js';
 import { oauthStatus, startOAuth, pendingOptions, connectOptions } from '../services/oauth.js';
 import { httpError } from '../services/errors.js';
-import { savePhoto, cleanMediaList, MAX_PHOTO_BYTES } from '../services/media.js';
+import { savePhoto, cleanMediaList, importRemotePhoto, MAX_PHOTO_BYTES } from '../services/media.js';
 
 /** Routes for the logged-in user's current dealership. Mounted behind requireDealership. */
 export const api = express.Router();
@@ -68,6 +69,8 @@ api.get('/meta', (req, res) => {
     general_post_types: GENERAL_POST_TYPES,
     objectives: OBJECTIVES,
     fields: FIELDS,
+    image_labels: IMAGE_LABELS,
+    languages: LANGUAGES,
     post_statuses: POST_STATUSES,
     oauth: oauthStatus(),
     billing_enabled: stripeEnabled(),
@@ -188,17 +191,23 @@ api.delete('/posts/:id', (req, res) => {
 });
 api.post('/posts/:id/submit', (req, res) => res.json(submitForApproval(id(req))));
 // For networks that aren't connected: the manager posts it themselves and records it here.
-api.post('/posts/:id/mark-posted', (req, res) => res.json(markPostedManually(id(req), { url: req.body?.url })));
-api.post('/posts/:id/approve', admin, (req, res) => res.json(approvePost(id(req))));
+// Staff can only do this once a Dealer Admin has approved the post; an admin's own "I posted it" approves it.
+api.post('/posts/:id/mark-posted', (req, res) => {
+  const post = getPost(id(req));
+  if (!post) throw httpError(404, 'Post not found');
+  if (!isApproved(post) && req.session.role === 'admin') approvePost(post.id, 'user', req.session.user);
+  res.json(markPostedManually(id(req), { url: req.body?.url }));
+});
+api.post('/posts/:id/approve', admin, (req, res) => res.json(approvePost(id(req), 'user', req.session.user)));
 api.post('/posts/:id/reject', admin, (req, res) => res.json(rejectPost(id(req), req.body?.reason)));
-api.post('/posts/:id/schedule', admin, (req, res) => res.json(schedulePost(id(req), req.body?.scheduled_at)));
+api.post('/posts/:id/schedule', admin, (req, res) => res.json(schedulePost(id(req), req.body?.scheduled_at, { approver: req.session.user })));
 api.post('/posts/:id/unschedule', admin, (req, res) => res.json(unschedulePost(id(req))));
 api.post('/posts/:id/publish', admin, async (req, res) => {
   const post = getPost(id(req));
   if (!post) throw httpError(404, 'Post not found');
   requireActive();
   // Publishing by hand counts as approval.
-  if (['draft', 'pending_approval', 'rejected', 'failed'].includes(post.status)) approvePost(post.id);
+  if (['draft', 'pending_approval', 'rejected', 'failed'].includes(post.status) || !post.approved_at) approvePost(post.id, 'user', req.session.user);
   res.json(await publishPost(post.id, 'user'));
 });
 api.post('/posts/:id/rewrite', async (req, res) => {
@@ -209,7 +218,7 @@ api.post('/posts/:id/rewrite', async (req, res) => {
 });
 api.post('/posts/approve-batch', admin, (req, res) => {
   const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
-  res.json(ids.map((pid) => approvePost(Number(pid))));
+  res.json(ids.map((pid) => approvePost(Number(pid), 'user', req.session.user)));
 });
 
 // --- photos ---
@@ -217,9 +226,12 @@ api.post('/media', express.raw({ type: ['image/jpeg', 'image/png', 'image/webp']
   res.status(201).json(savePhoto(req.body));
 });
 
+// Copy an inventory photo from the dealer's website so it can be used in a post image.
+api.post('/media/import', async (req, res) => res.status(201).json(await importRemotePhoto(req.body?.url)));
+
 // --- AI content studio ---
 api.post('/generate', async (req, res) => {
-  const { post_type, platforms, vehicle_id, instructions, scheduled_at, media, details } = req.body || {};
+  const { post_type, platforms, vehicle_id, instructions, scheduled_at, media, details, language } = req.body || {};
   res.status(201).json(
     await createPostsFromIdea({
       postType: post_type,
@@ -229,6 +241,7 @@ api.post('/generate', async (req, res) => {
       scheduledAt: scheduled_at,
       media: cleanMediaList(media),
       details: details && typeof details === 'object' ? details : null,
+      language,
       actor: 'user',
       source: 'ai',
     }),

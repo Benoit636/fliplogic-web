@@ -8,7 +8,7 @@ every person opens their own single-use link and chooses their own.
 | Role | Can do |
 | --- | --- |
 | **Dealer Admin** | Everything for their dealership: profile, logo and branding, team (invite, change role, remove), inventory, approving and publishing posts, settings. |
-| **Dealer Staff** | Create posts (from inventory or by hand) and send them to a Dealer Admin for approval. Can read the profile and inventory; can't change settings, the team, or publish. |
+| **Dealer Staff** | Create posts (from inventory or by hand) and send them to a Dealer Admin for approval; post approved posts by hand. Can read the profile and inventory; can't approve, publish, or change settings or the team. |
 
 The platform owner (emails listed in `SUPERADMIN_EMAILS`) also gets the **Admin** console at `/admin` to add more dealerships.
 
@@ -79,6 +79,30 @@ Without email set up, a Dealer Admin can remove the person and invite them again
 
 Staff can search the inventory (stock #, VIN, year, make, model, trim) and start a post from any vehicle:
 **Create Post → Or start from a vehicle in stock**, or **✨ Create post** on the inventory list. They can't import or edit vehicles.
+
+## 5. Create a post (everyone) and approve it (Dealer Admin)
+
+Nothing is posted until a **Dealer Admin approves it**. Facebook and Instagram aren't connected during the pilot,
+so approved posts are posted by hand with a ready-to-post kit.
+
+**Dealer Staff (about 1–2 minutes, on a phone):**
+1. **Create Post** → type the stock # in *Or start from a vehicle in stock* → tap the vehicle → pick the goal
+   (Fresh Arrival, Price Drop…). Add or change a photo if you like.
+2. **Create my post.** You get a branded **post image** (your logo, the photo, price, phone and website) and captions
+   for Facebook, Instagram and LinkedIn. Choose the language (**English**, **Français** or **EN + FR**), the image
+   style (**Showcase**, **Bold**, **Clean**) and size (**Square**, **Portrait**, **Story**). Edit the text if needed.
+3. **Send to my manager for approval.**
+
+**Dealer Admin:**
+1. **Approvals** shows each post with its image. **Approve** (your name and the time are recorded) or **Reject** with a reason.
+2. **My Posts → Ready to post → Ready to post…**: **Copy caption**, **Save image** (on iPhone this opens the share
+   sheet: choose *Save Image* to put it in Photos), **Open Facebook/Instagram/LinkedIn**, paste and post, then tap
+   **I posted it**. Staff can do this step too once the post is approved.
+3. A Dealer Admin creating their own post clicks **Approve & get it ready to post** and goes straight to the kit.
+
+**Download PNG** on the review screen saves the image at full size (1080×1080, 1080×1350 or 1080×1920).
+Captions use the dealership's default language from **Accounts & Settings** (VW Moncton: English + French), with the
+French call to action and French legal line filled in there.
 
 ## Security notes
 
