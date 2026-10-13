@@ -154,7 +154,7 @@ api.delete('/vehicles/:id', admin, (req, res) => {
 api.post('/vehicles/import', admin, express.text({ type: '*/*', limit: '10mb' }), (req, res) => {
   const text = typeof req.body === 'string' ? req.body : req.body?.csv;
   if (!text) throw httpError(400, 'Send the CSV file contents as the request body');
-  const { seenIds, ...result } = importVehiclesCsv(text);
+  const { seenIds, ...result } = importVehiclesCsv(text, { dryRun: req.query.dry_run === '1', markMissingSold: req.query.mark_missing_sold === '1' });
   res.json(result);
 });
 api.post('/vehicles/sync-feed', admin, async (req, res) => {

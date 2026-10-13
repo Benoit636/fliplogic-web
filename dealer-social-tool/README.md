@@ -44,7 +44,7 @@ there, under **More tools**.
 | ✅ Approval queue, or full autopilot | 💳 Stripe Checkout, Customer Portal, signed webhooks and proration |
 | 📅 Calendar and recurring autopilot rules, on the dealer's own time zone | 📊 `/admin`: MRR, ARR, trials, past-due accounts, usage per dealership |
 | 💬 Inbox triage for comments, DMs and Google reviews, with lead detection and suggested replies | 🎁 Comp plans, extend trials, open any dealership for support |
-| 🚙 Inventory from CSV or an auto-synced feed. Price-drop, new-arrival and sold automations | 📏 Plan limits and usage metering (AI posts, assistant messages, accounts, seats) |
+| 🚙 Inventory from CSV (preview, no duplicates: matched by VIN then stock #, English/French headers) or an auto-synced feed | 📏 Plan limits and usage metering (AI posts, assistant messages, accounts, seats) |
 | 📈 Analytics by network and post type | 🔐 Data isolated per dealership, tokens encrypted, CSRF protection and security headers |
 | 👥 Two roles (Dealer Admin, Dealer Staff), personal logins by invite, and multiple rooftops per login | 📨 Transactional email: welcome, invites, password reset, trial ending |
 | ⬇️ Data export at any time | 💾 Nightly database backups, Docker and Render deploy files |

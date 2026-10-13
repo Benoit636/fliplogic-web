@@ -194,3 +194,32 @@ test('platform owner can add a dealership from the admin console', async () => {
   assert.equal((await boss('POST', '/api/me/dealerships', { name: 'Superadmin can add' })).status, 201);
   assert.equal(auth.ROLE_LABELS.staff, 'Dealer Staff');
 });
+
+test('inventory over HTTP: admin previews and imports a CSV, staff search and pick vehicles but cannot import', async () => {
+  const d = createDealerWithAdmin({ name: 'CSV Motors', adminEmail: 'gm@csv.example' });
+  const admin = client();
+  await admin('POST', `/api/auth/invite/${tokenOf(d.invite_url)}/accept`, { name: 'Gm', password: 'Inventory-Boss-1' });
+  const csv = 'Stock #,VIN,Year,Make,Model,Trim,Mileage,Price,New/Used,Photos\nV1,3VV2B7AX5RM000001,2024,Volkswagen,Tiguan,Comfortline,12,39995,New,https://img/1.jpg\nU2,,2021,Volkswagen,Golf,GTI,50000,28995,Used,';
+  const preview = await admin('POST', '/api/vehicles/import?dry_run=1', undefined, { raw: csv, type: 'text/plain' });
+  assert.equal(preview.status, 200);
+  assert.equal(preview.data.created, 2);
+  assert.equal((await admin('GET', '/api/vehicles?status=all')).data.length, 0, 'preview saves nothing');
+  const done = await admin('POST', '/api/vehicles/import', undefined, { raw: csv, type: 'text/plain' });
+  assert.equal(done.data.created, 2);
+  assert.equal((await admin('POST', '/api/vehicles/import', undefined, { raw: csv, type: 'text/plain' })).data.unchanged, 2);
+  assert.equal((await admin('POST', '/api/vehicles', { make: 'VW', model: 'Golf', stock_number: 'u2' })).status, 409);
+
+  const inv = await admin('POST', '/api/team/invites', { email: 'rep@csv.example', role: 'staff' });
+  const staff = client();
+  await staff('POST', `/api/auth/invite/${tokenOf(inv.data.invite_url)}/accept`, { name: 'Rep', password: 'Sales-Floor-123' });
+  const found = await staff('GET', '/api/vehicles?status=available&condition=new&q=tig');
+  assert.deepEqual(found.data.map((v) => v.stock_number), ['V1']);
+  assert.equal((await staff('POST', '/api/vehicles/import?dry_run=1', undefined, { raw: csv, type: 'text/plain' })).status, 403);
+  assert.equal((await staff('PATCH', `/api/vehicles/${found.data[0].id}`, { price: 1 })).status, 403);
+  // Staff create a post straight from the vehicle; it goes to the approval queue.
+  const post = await staff('POST', '/api/generate', { post_type: 'new_vehicle_arrival', vehicle_id: found.data[0].id, platforms: ['facebook'], details: {} });
+  assert.equal(post.status, 201);
+  assert.match(post.data.posts[0].content, /Tiguan/);
+  assert.equal(post.data.posts[0].vehicle_id, found.data[0].id);
+  assert.equal((await client()('GET', '/api/vehicles')).status, 401);
+});

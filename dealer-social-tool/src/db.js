@@ -275,6 +275,15 @@ const MIGRATIONS = [
   ALTER TABLE memberships_v4 RENAME TO memberships;
   UPDATE invites SET role = CASE role WHEN 'staff' THEN 'staff' ELSE 'admin' END;
   `,
+  // 5: inventory: one vehicle per VIN and per stock number in each dealership
+  `
+  UPDATE vehicles SET vin = UPPER(REPLACE(REPLACE(TRIM(vin), ' ', ''), '-', '')), stock_number = UPPER(TRIM(stock_number));
+  -- Older data may hold repeats: the first vehicle keeps the VIN / stock number, later copies lose it.
+  UPDATE vehicles SET vin = '' WHERE vin <> '' AND id NOT IN (SELECT MIN(id) FROM vehicles WHERE vin <> '' GROUP BY dealership_id, vin);
+  UPDATE vehicles SET stock_number = '' WHERE stock_number <> '' AND id NOT IN (SELECT MIN(id) FROM vehicles WHERE stock_number <> '' GROUP BY dealership_id, stock_number);
+  CREATE UNIQUE INDEX idx_vehicles_vin ON vehicles(dealership_id, vin) WHERE vin <> '';
+  CREATE UNIQUE INDEX idx_vehicles_stock ON vehicles(dealership_id, stock_number) WHERE stock_number <> '';
+  `,
 ];
 export { MIGRATIONS };
 

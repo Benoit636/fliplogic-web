@@ -1,9 +1,12 @@
-import { all, get, run, updateRow, parseJson, logActivity, nowIso } from '../db.js';
+import { all, get, run, getDb, updateRow, parseJson, logActivity, nowIso } from '../db.js';
+import { normaliseVehicle, readInventoryCsv, parseCsv } from '../shared/inventory-csv.js';
 import { tenantId } from '../tenant.js';
 import { assertPublicUrl } from '../net.js';
 import { httpError } from './errors.js';
 
 const FIELDS = ['stock_number', 'vin', 'year', 'make', 'model', 'trim', 'condition', 'price', 'mileage', 'exterior_color', 'features', 'photos', 'status'];
+
+export { parseCsv };
 
 export function presentVehicle(row) {
   if (!row) return row;
@@ -14,41 +17,48 @@ export function vehicleTitle(v) {
   return [v.year, v.make, v.model, v.trim].filter(Boolean).join(' ');
 }
 
-function normalise(input) {
-  const v = {};
-  for (const key of FIELDS) if (input[key] !== undefined) v[key] = input[key];
-  for (const key of ['year', 'mileage']) {
-    if (v[key] !== undefined) v[key] = v[key] === '' || v[key] === null ? null : Math.round(Number(String(v[key]).replace(/[^0-9.]/g, '')));
-  }
-  if (v.price !== undefined) v.price = v.price === '' || v.price === null ? null : Number(String(v.price).replace(/[^0-9.]/g, ''));
-  if (v.condition) {
-    const c = String(v.condition).toLowerCase();
-    v.condition = c.startsWith('n') ? 'new' : c.startsWith('c') ? 'certified' : 'used';
-  }
-  if (v.status) {
-    const s = String(v.status).toLowerCase();
-    if (!['available', 'pending', 'sold'].includes(s)) throw httpError(400, `Invalid status "${v.status}"`);
-    v.status = s;
-  }
-  if (v.photos !== undefined) {
-    const list = Array.isArray(v.photos) ? v.photos : String(v.photos).split(/[\s|,]+/);
-    v.photos = JSON.stringify(list.map((p) => String(p).trim()).filter(Boolean));
-  }
-  return v;
+function clean(input, opts) {
+  const { vehicle, error } = normaliseVehicle(input || {}, opts);
+  if (error) throw httpError(400, error);
+  if (vehicle.photos) vehicle.photos = JSON.stringify(vehicle.photos);
+  return vehicle;
 }
 
-export function listVehicles({ status, q, limit = 500 } = {}) {
+/** Vehicles in this dealership that already use the VIN or stock number. */
+function findMatches({ vin, stock_number }, excludeId = 0) {
+  const t = tenantId();
+  return {
+    byVin: vin ? presentVehicle(get('SELECT * FROM vehicles WHERE dealership_id = ? AND vin = ? AND id != ?', t, vin, excludeId)) : undefined,
+    byStock: stock_number ? presentVehicle(get('SELECT * FROM vehicles WHERE dealership_id = ? AND stock_number = ? AND id != ?', t, stock_number, excludeId)) : undefined,
+  };
+}
+
+function assertUnique(v, excludeId) {
+  const { byVin, byStock } = findMatches(v, excludeId);
+  if (byVin) throw httpError(409, `VIN ${v.vin} is already in inventory: ${vehicleTitle(byVin)}${byVin.stock_number ? ` (stock #${byVin.stock_number})` : ''}`);
+  if (byStock) throw httpError(409, `Stock #${v.stock_number} is already used by ${vehicleTitle(byStock)}`);
+}
+
+/**
+ * Search inventory. Every word must match somewhere (year, make, model, trim, stock #, VIN or colour),
+ * so "21 tiguan" or the last digits of a VIN both work. condition: "new" | "used" (used includes certified).
+ */
+export function listVehicles({ status, condition, q, limit = 500 } = {}) {
   const where = ['dealership_id = ?'];
   const params = [tenantId()];
-  if (status) {
+  if (status && status !== 'all') {
     where.push('status = ?');
     params.push(status);
   }
-  if (q) {
-    where.push("(make || ' ' || model || ' ' || trim || ' ' || stock_number || ' ' || vin || ' ' || year) LIKE ?");
-    params.push(`%${q}%`);
+  if (condition === 'new') where.push(`condition = 'new'`);
+  if (condition === 'used') where.push(`condition IN ('used', 'certified')`);
+  for (const word of String(q || '').trim().split(/\s+/).filter(Boolean).slice(0, 8)) {
+    where.push(`(year || ' ' || make || ' ' || model || ' ' || trim || ' ' || stock_number || ' ' || vin || ' ' || exterior_color) LIKE ?`);
+    params.push(`%${word.replace(/[%_]/g, '')}%`);
   }
-  return all(`SELECT * FROM vehicles WHERE ${where.join(' AND ')} ORDER BY created_at DESC, id DESC LIMIT ?`, ...params, Number(limit)).map(presentVehicle);
+  return all(`SELECT * FROM vehicles WHERE ${where.join(' AND ')} ORDER BY created_at DESC, id DESC LIMIT ?`, ...params, Math.min(2000, Number(limit) || 500)).map(
+    presentVehicle,
+  );
 }
 
 export function getVehicle(id) {
@@ -56,8 +66,8 @@ export function getVehicle(id) {
 }
 
 export function createVehicle(input) {
-  const v = normalise(input);
-  if (!v.make || !v.model) throw httpError(400, 'make and model are required');
+  const v = clean(input);
+  assertUnique(v);
   const keys = Object.keys(v);
   const { lastInsertRowid } = run(
     `INSERT INTO vehicles (dealership_id, ${keys.join(', ')}) VALUES (?, ${keys.map(() => '?').join(', ')})`,
@@ -70,7 +80,8 @@ export function createVehicle(input) {
 export function updateVehicle(id, input) {
   const existing = getVehicle(id);
   if (!existing) throw httpError(404, 'Vehicle not found');
-  const v = normalise(input);
+  const v = clean(input, { partial: true });
+  assertUnique(v, id);
   // Remember the old price so the bot can announce price drops.
   if (v.price != null && existing.price != null && v.price < existing.price) v.previous_price = existing.price;
   if (v.status && v.status !== 'sold') v.sold_celebrated = 0;
@@ -124,94 +135,107 @@ export function markSoldCelebrated(id) {
   run('UPDATE vehicles SET sold_celebrated = 1 WHERE id = ? AND dealership_id = ?', id, tenantId());
 }
 
-// --- CSV import (works with typical DMS / inventory feed exports) ---
+// --- CSV import (DMS / website exports; see shared/inventory-csv.js for the columns understood) ---
 
-export function parseCsv(text) {
-  const rows = [];
-  let row = [];
-  let field = '';
-  let quoted = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (quoted) {
-      if (ch === '"' && text[i + 1] === '"') {
-        field += '"';
-        i++;
-      } else if (ch === '"') quoted = false;
-      else field += ch;
-    } else if (ch === '"') quoted = true;
-    else if (ch === ',') {
-      row.push(field);
-      field = '';
-    } else if (ch === '\n' || ch === '\r') {
-      if (ch === '\r' && text[i + 1] === '\n') i++;
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = '';
-    } else field += ch;
-  }
-  if (field !== '' || row.length) {
-    row.push(field);
-    rows.push(row);
-  }
-  return rows.filter((r) => r.some((c) => c.trim() !== ''));
-}
+const sameValue = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
-const HEADER_ALIASES = {
-  stock_number: ['stock', 'stock_number', 'stock #', 'stock no', 'stocknumber', 'stock_no'],
-  vin: ['vin'],
-  year: ['year', 'model year'],
-  make: ['make', 'manufacturer'],
-  model: ['model'],
-  trim: ['trim', 'series'],
-  condition: ['condition', 'type', 'new/used', 'new_used'],
-  price: ['price', 'internet price', 'selling price', 'sale price', 'list price', 'msrp'],
-  mileage: ['mileage', 'miles', 'odometer', 'kilometers', 'km', 'kms'],
-  exterior_color: ['color', 'exterior color', 'exterior_color', 'colour', 'exterior colour'],
-  features: ['features', 'options', 'description', 'highlights'],
-  photos: ['photos', 'photo', 'images', 'image urls', 'image_urls', 'photo urls', 'photo_urls'],
-  status: ['status'],
-};
-
-export function importVehiclesCsv(text, { actor = 'user' } = {}) {
-  const rows = parseCsv(text);
-  if (rows.length < 2) throw httpError(400, 'CSV needs a header row and at least one vehicle');
-  const headers = rows[0].map((h) => h.trim().toLowerCase());
-  const mapping = {};
-  for (const [field, aliases] of Object.entries(HEADER_ALIASES)) {
-    const idx = headers.findIndex((h) => aliases.includes(h));
-    if (idx >= 0) mapping[field] = idx;
-  }
-  if (mapping.make === undefined || mapping.model === undefined) {
-    throw httpError(400, 'CSV must include Make and Model columns');
-  }
-  let created = 0;
-  let updated = 0;
-  const errors = [];
+/**
+ * Add new vehicles and update existing ones, matched by VIN first, then stock number, so re-importing
+ * tomorrow's export never creates duplicates. With dryRun nothing is saved: you get the same report as a preview.
+ * markMissingSold marks available vehicles that aren't in the file as sold (only when the file has 3+ vehicles).
+ */
+export function importVehiclesCsv(text, { actor = 'user', dryRun = false, markMissingSold = false } = {}) {
+  const parsed = readInventoryCsv(text);
+  if (parsed.error) throw httpError(400, parsed.error);
+  const result = {
+    dry_run: dryRun,
+    total: parsed.items.length,
+    created: 0,
+    updated: 0,
+    unchanged: 0,
+    marked_sold: 0,
+    duplicates_in_file: 0,
+    errors: [],
+    rows: [],
+    mapped_columns: parsed.mapped,
+    ignored_columns: parsed.ignored,
+    warning: null,
+  };
   const seenIds = new Set();
-  rows.slice(1).forEach((cells, i) => {
-    const input = {};
-    for (const [field, idx] of Object.entries(mapping)) input[field] = (cells[idx] ?? '').trim();
-    if (!input.status) delete input.status;
-    try {
-      const existing =
-        (input.vin && get('SELECT id FROM vehicles WHERE dealership_id = ? AND vin = ?', tenantId(), input.vin)) ||
-        (input.stock_number && get('SELECT id FROM vehicles WHERE dealership_id = ? AND stock_number = ?', tenantId(), input.stock_number));
-      if (existing) {
-        updateVehicle(existing.id, input);
-        seenIds.add(existing.id);
-        updated++;
-      } else {
-        seenIds.add(createVehicle(input).id);
-        created++;
+  const seenKeys = new Map();
+  const report = (row) => result.rows.length < 300 && result.rows.push(row);
+  const db = getDb();
+  db.exec('BEGIN');
+  try {
+    for (const { line, vehicle: v, error } of parsed.items) {
+      const base = { line, title: v ? vehicleTitle(v) : '', stock_number: v?.stock_number || '', vin: v?.vin || '' };
+      const skip = (reason, action = 'error') => {
+        result.errors.push({ row: line, error: reason });
+        report({ ...base, action, error: reason });
+      };
+      if (error) {
+        skip(error);
+        continue;
       }
-    } catch (err) {
-      errors.push({ row: i + 2, error: err.message });
+      const keys = [v.vin && `vin:${v.vin}`, v.stock_number && `stock:${v.stock_number}`].filter(Boolean);
+      const firstLine = keys.map((k) => seenKeys.get(k)).find(Boolean);
+      if (firstLine) {
+        result.duplicates_in_file++;
+        skip(`Same vehicle as line ${firstLine}, skipped`, 'duplicate');
+        continue;
+      }
+      keys.forEach((k) => seenKeys.set(k, line));
+      const { byVin, byStock } = findMatches(v);
+      if (byVin && byStock && byVin.id !== byStock.id) {
+        skip(`VIN matches ${vehicleTitle(byVin)} but stock #${v.stock_number} belongs to ${vehicleTitle(byStock)}`);
+        continue;
+      }
+      if (!byVin && byStock && v.vin && byStock.vin && byStock.vin !== v.vin) {
+        skip(`Stock #${v.stock_number} is already used by ${vehicleTitle(byStock)} (VIN ${byStock.vin})`);
+        continue;
+      }
+      const existing = byVin || byStock;
+      try {
+        if (existing) {
+          seenIds.add(existing.id);
+          const changes = Object.keys(v).filter((k) => !sameValue(existing[k], v[k]));
+          if (!changes.length) {
+            result.unchanged++;
+            report({ ...base, action: 'unchanged' });
+          } else {
+            updateVehicle(existing.id, v);
+            result.updated++;
+            report({ ...base, action: 'update', changes });
+          }
+        } else {
+          seenIds.add(createVehicle(v).id);
+          result.created++;
+          report({ ...base, action: 'create' });
+        }
+      } catch (err) {
+        skip(err.message);
+      }
     }
-  });
-  logActivity(actor, 'inventory.imported', `${created} added, ${updated} updated`);
-  return { created, updated, errors, seenIds };
+    if (markMissingSold) {
+      if (seenIds.size < 3) result.warning = 'Nothing was marked sold: the file has fewer than 3 valid vehicles.';
+      else
+        for (const row of all(`SELECT * FROM vehicles WHERE dealership_id = ? AND status = 'available'`, tenantId())) {
+          if (seenIds.has(row.id)) continue;
+          updateVehicle(row.id, { status: 'sold' });
+          result.marked_sold++;
+          report({ line: null, action: 'sold', title: vehicleTitle(row), stock_number: row.stock_number, vin: row.vin });
+        }
+    }
+    if (dryRun) db.exec('ROLLBACK');
+    else {
+      logActivity(actor, 'inventory.imported', `${result.created} added, ${result.updated} updated, ${result.marked_sold} marked sold, ${result.errors.length} skipped`);
+      db.exec('COMMIT');
+    }
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  return { ...result, seenIds };
 }
 
 /**
@@ -224,17 +248,9 @@ export async function syncInventoryFeed(dealer) {
   const res = await fetch(dealer.inventory_feed_url, { signal: AbortSignal.timeout(30_000), redirect: 'error' });
   if (!res.ok) throw new Error(`Feed download failed: HTTP ${res.status}`);
   const text = await res.text();
-  const result = importVehiclesCsv(text, { actor: 'feed' });
-  let sold = 0;
-  // Guard against a broken/empty feed wiping out the whole lot.
-  if (dealer.feed_marks_sold && result.seenIds.size >= 3) {
-    for (const v of all(`SELECT id FROM vehicles WHERE dealership_id = ? AND status = 'available'`, tenantId())) {
-      if (!result.seenIds.has(v.id)) {
-        updateVehicle(v.id, { status: 'sold' });
-        sold++;
-      }
-    }
-  }
+  // Vehicles that leave the feed are sold (guarded against a broken or empty feed wiping out the lot).
+  const result = importVehiclesCsv(text, { actor: 'feed', markMissingSold: !!dealer.feed_marks_sold });
+  const sold = result.marked_sold;
   const summary = `${result.created} added, ${result.updated} updated, ${sold} marked sold${result.errors.length ? `, ${result.errors.length} rows skipped` : ''}`;
   run('UPDATE dealerships SET feed_last_synced_at = ?, feed_last_result = ? WHERE id = ?', nowIso(), summary, tenantId());
   return { ...result, seenIds: undefined, sold, summary };

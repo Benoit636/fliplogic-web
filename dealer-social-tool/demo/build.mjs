@@ -70,6 +70,8 @@ write(
 );
 
 write('shared/objectives.js', read('src/shared/objectives.js'));
+write('shared/inventory-csv.js', read('src/shared/inventory-csv.js'));
+write('inventory-template.csv', read('public/inventory-template.csv'));
 
 // --- marketing page (artifact pages are wrapped in their own <html>/<body>) ---
 const landing = read('public/landing.html');

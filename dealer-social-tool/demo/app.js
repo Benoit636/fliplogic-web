@@ -639,38 +639,79 @@ views.inbox = async () => {
   };
 };
 
+const CONDITION_LABELS = { new: 'New', used: 'Used', certified: 'Certified pre-owned' };
+const STATUS_LABELS = { available: 'Available', pending: 'Pending', sold: 'Sold' };
+const vehicleName = (v) => [v.year, v.make, v.model, v.trim].filter(Boolean).join(' ');
+
 function vehicleForm(v = {}) {
+  const input = (k, l, extra = '') => `<label class="field"><span>${l}</span><input name="${k}" value="${esc(v[k] ?? '')}" ${extra}></label>`;
   return `<form class="form-grid" id="vehicle-form">
-    ${[
-      ['year', 'Year', 'number'],
-      ['make', 'Make'],
-      ['model', 'Model'],
-      ['trim', 'Trim'],
-      ['price', 'Price', 'number'],
-      ['mileage', `Odometer (${state.dealership?.distance_unit || 'km'})`, 'number'],
-      ['exterior_color', 'Color'],
-      ['stock_number', 'Stock #'],
-      ['vin', 'VIN'],
-    ]
-      .map(
-        ([k, l, t = 'text']) =>
-          `<label class="field"><span>${l}</span><input name="${k}" type="${t}" value="${esc(v[k] ?? '')}" ${['make', 'model'].includes(k) ? 'required' : ''}></label>`,
-      )
-      .join('')}
-    <label class="field"><span>Condition</span><select name="condition">${['new', 'used', 'certified'].map((c) => `<option ${v.condition === c ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
-    <label class="field"><span>Status</span><select name="status">${['available', 'pending', 'sold'].map((c) => `<option ${v.status === c ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
-    <label class="field full"><span>Features / highlights</span><textarea name="features" rows="2">${esc(v.features || '')}</textarea></label>
-    <label class="field full"><span>Photo URLs (one per line)</span><textarea name="photos" rows="3">${esc((v.photos || []).join('\n'))}</textarea></label>
+    ${input('stock_number', 'Stock #', 'autocapitalize="characters" autocomplete="off"')}
+    ${input('vin', 'VIN', 'maxlength="17" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="17 characters"')}
+    ${input('year', 'Year', 'inputmode="numeric" placeholder="2024"')}
+    ${input('make', 'Make <span class="req">*</span>', 'required placeholder="Volkswagen"')}
+    ${input('model', 'Model <span class="req">*</span>', 'required placeholder="Tiguan"')}
+    ${input('trim', 'Trim', 'placeholder="Comfortline"')}
+    ${input('price', 'Price', 'inputmode="decimal" placeholder="$36,495"')}
+    ${input('mileage', `Odometer (${esc(state.dealership?.distance_unit || 'km')})`, 'inputmode="numeric"')}
+    <label class="field"><span>New or used</span><select name="condition">${Object.entries(CONDITION_LABELS).map(([c, l]) => `<option value="${c}" ${(v.condition || 'used') === c ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    <label class="field"><span>Status</span><select name="status">${Object.entries(STATUS_LABELS).map(([c, l]) => `<option value="${c}" ${(v.status || 'available') === c ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    ${input('exterior_color', 'Colour')}
+    <label class="field full"><span>Features / highlights</span><textarea name="features" rows="2" placeholder="Heated seats, Apple CarPlay, AWD">${esc(v.features || '')}</textarea></label>
+    <div class="field full"><span>Photos <span class="muted">(the first one is the cover)</span></span>
+      <div class="photo-grid" id="veh-photos"></div>
+      <div class="row">
+        <label class="btn small" for="veh-photo-input">📷 Add photos</label>
+        <input type="file" id="veh-photo-input" accept="image/jpeg,image/png,image/webp,image/*" multiple hidden>
+        <input id="veh-photo-url" placeholder="…or paste a photo link (https://)" style="flex:1;min-width:180px">
+        <span class="small muted" id="veh-photo-status"></span>
+      </div>
+    </div>
     <div class="full row"><span class="spacer"></span><button class="primary">Save vehicle</button></div>
   </form>`;
 }
 
 function openVehicleEditor(v, done) {
   const { el, close } = openModal(v?.id ? 'Edit vehicle' : 'Add vehicle', vehicleForm(v || {}));
+  const photos = [...(v?.photos || [])];
+  const draw = () => {
+    $('#veh-photos', el).innerHTML = photos
+      .map((url, i) => `<div class="photo"><img src="${esc(url)}" alt="Photo ${i + 1}">${i === 0 ? '<span class="badge info">Cover</span>' : ''}<button type="button" class="photo-x" data-remove="${i}" aria-label="Remove photo">✕</button></div>`)
+      .join('');
+  };
+  draw();
+  $('#veh-photos', el).onclick = (e) => {
+    const b = e.target.closest('[data-remove]');
+    if (!b) return;
+    photos.splice(Number(b.dataset.remove), 1);
+    draw();
+  };
+  $('#veh-photo-input', el).onchange = async (e) => {
+    const files = [...e.target.files];
+    const status = $('#veh-photo-status', el);
+    for (const [i, file] of files.entries()) {
+      status.textContent = `Uploading ${i + 1} of ${files.length}…`;
+      try {
+        photos.push(await uploadPhoto(file));
+        draw();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    }
+    status.textContent = '';
+    e.target.value = '';
+  };
+  $('#veh-photo-url', el).onchange = (e) => {
+    const url = e.target.value.trim();
+    if (!/^https?:\/\/\S+$/i.test(url)) return url && toast('Paste a full link starting with https://', 'error');
+    if (!photos.includes(url)) photos.push(url);
+    e.target.value = '';
+    draw();
+  };
   $('#vehicle-form', el).onsubmit = (e) => {
     e.preventDefault();
     const body = Object.fromEntries(new FormData(e.target));
-    body.photos = body.photos.split(/\s+/).filter(Boolean);
+    body.photos = photos;
     act(e.submitter, () => (v?.id ? api('PATCH', `/vehicles/${v.id}`, body) : api('POST', '/vehicles', body)), 'Vehicle saved').then((r) => {
       if (r) {
         close();
@@ -680,59 +721,170 @@ function openVehicleEditor(v, done) {
   };
 }
 
-views.inventory = async () => {
-  const params = new URLSearchParams(location.hash.split('?')[1] || '');
-  const q = params.get('q') || '';
-  const vehicles = await api('GET', `/vehicles?${new URLSearchParams(q ? { q } : {})}`);
-  const unit = state.dealership?.distance_unit || 'km';
-  view.innerHTML = `<div class="card">
-    <div class="card-head"><form id="inv-search" style="flex:1;max-width:340px"><input name="q" placeholder="Search make, model, stock #…" value="${esc(q)}"></form>
-      <div class="actions">${state.dealership?.inventory_feed_url ? '<button class="small" id="inv-sync">↻ Sync feed now</button>' : ''}<label class="btn small">⬆ Import CSV<input type="file" id="inv-csv" accept=".csv,text/csv" hidden></label><button class="small primary" id="inv-add">+ Add vehicle</button></div></div>
-    <div class="table-wrap"><table><tr><th></th><th>Vehicle</th><th>Condition</th><th class="num">Price</th><th class="num">${unit}</th><th>Status</th><th>Last posted</th><th></th></tr>
-    ${
-      vehicles
-        .map(
-          (v) => `<tr><td>${v.photos[0] ? `<img src="${esc(v.photos[0])}" alt="" style="width:56px;height:42px;object-fit:cover;border-radius:6px">` : ''}</td>
-      <td><strong>${esc([v.year, v.make, v.model].join(' '))}</strong> ${esc(v.trim)}<div class="small muted">${esc(v.exterior_color)} ${v.stock_number ? `· #${esc(v.stock_number)}` : ''}</div></td>
-      <td>${esc(v.condition)}</td><td class="num">${money(v.price)}${v.previous_price > v.price ? `<div class="small" style="color:var(--good)">↓ from ${money(v.previous_price)}</div>` : ''}</td><td class="num">${num(v.mileage)}</td>
-      <td><span class="badge ${v.status === 'available' ? 'good' : v.status === 'sold' ? 'info' : 'warn'}">${v.status}</span></td>
-      <td class="small">${v.last_posted_at ? ago(v.last_posted_at) : '<span class="badge warn">never</span>'}</td>
-      <td><div class="row" style="flex-wrap:nowrap"><a class="btn small" href="${v.status === 'sold' ? `#/studio?vehicle=${v.id}&type=sold_celebration` : `#/create?vehicle=${v.id}`}">✨ Create post</a><button class="small" data-vedit="${v.id}">Edit</button><button class="small danger" data-vdel="${v.id}">✕</button></div></td></tr>`,
-        )
-        .join('') ||
-      '<tr><td colspan="8"><div class="empty">No vehicles yet. Add one or import a CSV export from your DMS (columns like Stock, VIN, Year, Make, Model, Trim, Price, Mileage, Color, Features, Photos).</div></td></tr>'
+/** Read a CSV the way Excel saves it: UTF-8, or Windows-1252 for older French exports. */
+async function readCsvFile(file) {
+  const buf = await file.arrayBuffer();
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buf);
+  } catch {
+    return new TextDecoder('windows-1252').decode(buf);
+  }
+}
+
+function openImport(done) {
+  const { el, close } = openModal(
+    'Import inventory (CSV)',
+    `<div class="stack">
+      <p class="small muted" style="margin:0">Export your inventory from your DMS or website provider as CSV (Excel “CSV” works). Vehicles are matched by <strong>VIN</strong>, then <strong>stock #</strong>: existing ones are updated, new ones added, never duplicated. Run it again any time to update prices and photos.</p>
+      <div class="row"><label class="btn primary" for="csv-file">Choose CSV file</label><input type="file" id="csv-file" accept=".csv,text/csv,text/plain" hidden><a class="btn small" href="inventory-template.csv" download>⬇ Example file</a><span class="small muted" id="csv-name"></span></div>
+      <label class="check" style="border-radius:12px"><input type="checkbox" id="csv-sold"> Mark vehicles that aren’t in this file as sold</label>
+      <div id="csv-preview"></div>
+    </div>`,
+    { wide: true },
+  );
+  let text = '';
+  const preview = async () => {
+    if (!text) return;
+    const box = $('#csv-preview', el);
+    box.innerHTML = '<div class="empty">Checking the file…</div>';
+    const sold = $('#csv-sold', el).checked ? '&mark_missing_sold=1' : '';
+    let r;
+    try {
+      r = await api('POST', `/vehicles/import?dry_run=1${sold}`, text, { raw: true });
+    } catch (err) {
+      box.innerHTML = `<div class="banner bad">${esc(err.message)}</div>`;
+      return;
     }
-    </table></div></div>`;
-  $('#inv-search').onsubmit = (e) => {
-    e.preventDefault();
-    location.hash = `#/inventory?q=${encodeURIComponent(new FormData(e.target).get('q'))}`;
+    const ACTIONS = { create: ['New', 'good'], update: ['Update', 'info'], unchanged: ['No change', ''], sold: ['Mark sold', 'warn'], error: ['Skipped', 'bad'], duplicate: ['Duplicate', 'warn'] };
+    const changes = r.created + r.updated + r.marked_sold;
+    box.innerHTML = `<div class="stack">
+      <div class="import-stats">
+        <div><strong>${r.created}</strong><span>new</span></div><div><strong>${r.updated}</strong><span>updated</span></div>
+        <div><strong>${r.unchanged}</strong><span>no change</span></div><div><strong>${r.errors.length}</strong><span>skipped</span></div>
+        ${$('#csv-sold', el).checked ? `<div><strong>${r.marked_sold}</strong><span>marked sold</span></div>` : ''}
+      </div>
+      ${r.warning ? `<div class="banner">${esc(r.warning)}</div>` : ''}
+      <p class="small muted" style="margin:0">Columns used: ${r.mapped_columns.map((c) => `<span class="badge">${esc(c.replace('_', ' '))}</span>`).join(' ')}${r.ignored_columns.length ? `<br>Ignored (not saved): ${esc(r.ignored_columns.join(', '))}` : ''}</p>
+      <div class="table-wrap import-rows"><table><tr><th>Line</th><th>Vehicle</th><th>Stock #</th><th>Result</th></tr>
+      ${r.rows
+        .map((row) => {
+          const [label, cls] = ACTIONS[row.action] || [row.action, ''];
+          const note = row.error || (row.changes ? `Changes: ${row.changes.map((c) => c.replace('_', ' ')).join(', ')}` : '');
+          return `<tr><td class="small muted">${row.line ?? ''}</td><td>${esc(row.title || '—')}${row.vin ? `<div class="small muted">VIN ${esc(row.vin)}</div>` : ''}</td><td>${esc(row.stock_number || '')}</td><td><span class="badge ${cls}">${label}</span>${note ? `<div class="small muted">${esc(note)}</div>` : ''}</td></tr>`;
+        })
+        .join('')}</table></div>
+      <div class="row modal-sticky"><span class="spacer"></span><button class="primary" id="csv-go" ${changes ? '' : 'disabled'}>${changes ? `Import: ${r.created} new, ${r.updated} updated${r.marked_sold ? `, ${r.marked_sold} sold` : ''}` : 'Nothing to change'}</button></div>
+    </div>`;
+    $('#csv-go', el).onclick = async (e) => {
+      const done2 = await act(e.target, () => api('POST', `/vehicles/import?x=1${sold}`, text, { raw: true }), (x) => `Inventory updated: ${x.created} new, ${x.updated} updated${x.marked_sold ? `, ${x.marked_sold} marked sold` : ''}`);
+      if (done2) {
+        close();
+        done();
+      }
+    };
   };
-  $('#inv-add').onclick = () => openVehicleEditor(null, route);
-  const sync = $('#inv-sync');
-  if (sync)
-    sync.onclick = () =>
-      act(
-        sync,
-        () => api('POST', '/vehicles/sync-feed'),
-        (r) => `Feed synced: ${r.summary}`,
-      ).then(route);
-  $('#inv-csv').onchange = async (e) => {
+  $('#csv-file', el).onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const r = await act(null, async () => api('POST', '/vehicles/import', await file.text(), { raw: true }));
-    if (r) toast(`Imported: ${r.created} added, ${r.updated} updated${r.errors.length ? `, ${r.errors.length} errors` : ''}`);
-    route();
+    if (file.size > 10 * 1024 * 1024) return toast('That file is over 10 MB', 'error');
+    $('#csv-name', el).textContent = file.name;
+    text = await readCsvFile(file);
+    preview();
   };
-  view.onclick = async (e) => {
+  $('#csv-sold', el).onchange = preview;
+}
+
+function vehicleCard(v, { admin }) {
+  const unit = state.dealership?.distance_unit || 'km';
+  const meta = [v.stock_number && `Stock #${v.stock_number}`, v.vin && `VIN …${v.vin.slice(-8)}`, v.mileage != null && `${num(v.mileage)} ${unit}`, v.exterior_color].filter(Boolean);
+  const createHref = v.status === 'sold' ? `#/studio?vehicle=${v.id}&type=sold_celebration` : `#/create?vehicle=${v.id}`;
+  return `<div class="veh">
+    <div class="veh-photo">${v.photos[0] ? `<img src="${esc(v.photos[0])}" alt="" loading="lazy">` : '<span aria-hidden="true">🚗</span>'}</div>
+    <div class="veh-main">
+      <div class="veh-title">${esc([v.year, v.make, v.model].filter(Boolean).join(' '))} <span class="muted">${esc(v.trim)}</span></div>
+      <div class="small muted">${esc(meta.join(' · '))}</div>
+      <div class="row" style="gap:6px;margin-top:4px">
+        <span class="badge ${v.condition === 'new' ? 'info' : ''}">${CONDITION_LABELS[v.condition] || esc(v.condition)}</span>
+        <span class="badge ${v.status === 'available' ? 'good' : v.status === 'sold' ? '' : 'warn'}">${STATUS_LABELS[v.status] || esc(v.status)}</span>
+        ${v.photos.length ? `<span class="badge">📷 ${v.photos.length}</span>` : '<span class="badge warn">No photo</span>'}
+        ${v.last_posted_at ? `<span class="small muted">posted ${ago(v.last_posted_at)}</span>` : '<span class="small muted">never posted</span>'}
+      </div>
+    </div>
+    <div class="veh-price">${money(v.price)}${v.previous_price > v.price ? `<div class="small" style="color:var(--good)">↓ from ${money(v.previous_price)}</div>` : ''}</div>
+    <div class="veh-actions"><a class="btn small primary" href="${createHref}">✨ Create post</a>${admin ? `<button class="small" data-vedit="${v.id}">Edit</button><button class="small danger" data-vdel="${v.id}" aria-label="Delete">✕</button>` : ''}</div>
+  </div>`;
+}
+
+views.inventory = async () => {
+  const params = new URLSearchParams(location.hash.split('?')[1] || '');
+  const filters = { q: params.get('q') || '', condition: params.get('condition') || '', status: params.get('status') || 'available' };
+  const admin = isAdmin();
+  view.innerHTML = `<div class="stack">
+    <div class="card inv-toolbar">
+      <div class="row">
+        <input id="inv-q" type="search" placeholder="Search stock #, VIN, year, make, model…" value="${esc(filters.q)}" autocomplete="off" style="flex:1;min-width:220px">
+        ${admin ? `${state.dealership?.inventory_feed_url ? '<button class="small" id="inv-sync">↻ Sync feed</button>' : ''}<button class="small" id="inv-import">⬆ Import CSV</button><button class="small primary" id="inv-add">+ Add vehicle</button>` : ''}
+      </div>
+      <div class="row" style="margin-top:12px">
+        <div class="tabs" style="margin:0" id="inv-cond">${[['', 'All'], ['new', 'New'], ['used', 'Used']].map(([k, l]) => `<button data-cond="${k}" class="${filters.condition === k ? 'active' : ''}">${l}</button>`).join('')}</div>
+        <select id="inv-status" style="width:auto">${[['available', 'Available'], ['pending', 'Pending'], ['sold', 'Sold'], ['all', 'All statuses']].map(([k, l]) => `<option value="${k}" ${filters.status === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <span class="spacer"></span><span class="small muted" id="inv-count"></span>
+      </div>
+    </div>
+    <div id="inv-list" class="veh-list"></div>
+  </div>`;
+  let vehicles = [];
+  let seq = 0;
+  const load = async () => {
+    const mine = ++seq;
+    const query = new URLSearchParams({ status: filters.status, ...(filters.condition ? { condition: filters.condition } : {}), ...(filters.q ? { q: filters.q } : {}) });
+    history.replaceState(null, '', `#/inventory?${query}`);
+    const rows = await api('GET', `/vehicles?${query}`);
+    if (mine !== seq) return; // a newer search finished first
+    vehicles = rows;
+    $('#inv-count').textContent = `${rows.length} vehicle${rows.length === 1 ? '' : 's'}`;
+    $('#inv-list').innerHTML =
+      rows.map((v) => vehicleCard(v, { admin })).join('') ||
+      `<div class="empty">${
+        filters.q || filters.condition || filters.status !== 'available'
+          ? 'No vehicles match. Try fewer words or another filter.'
+          : admin
+            ? 'No vehicles yet. Import a CSV export from your DMS (Stock #, VIN, Year, Make, Model, Trim, Mileage, Price, New/Used, Photos) or add one by hand.'
+            : 'No vehicles yet. Ask your Dealer Admin to import the inventory.'
+      }</div>`;
+  };
+  let timer;
+  $('#inv-q').oninput = (e) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      filters.q = e.target.value.trim();
+      load();
+    }, 200);
+  };
+  $('#inv-cond').onclick = (e) => {
+    const b = e.target.closest('[data-cond]');
+    if (!b) return;
+    filters.condition = b.dataset.cond;
+    $$('#inv-cond button').forEach((x) => x.classList.toggle('active', x === b));
+    load();
+  };
+  $('#inv-status').onchange = (e) => {
+    filters.status = e.target.value;
+    load();
+  };
+  if (admin) {
+    $('#inv-add').onclick = () => openVehicleEditor(null, load);
+    $('#inv-import').onclick = () => openImport(load);
+    const sync = $('#inv-sync');
+    if (sync) sync.onclick = () => act(sync, () => api('POST', '/vehicles/sync-feed'), (r) => `Feed synced: ${r.summary}`).then(load);
+  }
+  $('#inv-list').onclick = (e) => {
     const b = e.target.closest('button');
     if (!b) return;
-    if (b.dataset.vedit)
-      openVehicleEditor(
-        vehicles.find((v) => v.id === Number(b.dataset.vedit)),
-        route,
-      );
-    if (b.dataset.vdel && confirm('Delete this vehicle?')) act(b, () => api('DELETE', `/vehicles/${b.dataset.vdel}`), 'Deleted').then(route);
+    if (b.dataset.vedit) openVehicleEditor(vehicles.find((v) => v.id === Number(b.dataset.vedit)), load);
+    if (b.dataset.vdel && confirm('Delete this vehicle from inventory?')) act(b, () => api('DELETE', `/vehicles/${b.dataset.vdel}`), 'Deleted').then(load);
   };
+  await load();
 };
 
 function ruleForm(r = {}) {
@@ -1218,14 +1370,7 @@ views.create = async (opts) => {
   if (vehicleParam) {
     history.replaceState(null, '', '#/create');
     const v = await api('GET', `/vehicles/${Number(vehicleParam)}`).catch(() => null);
-    if (v) {
-      const details = {};
-      for (const k of ['year', 'make', 'model', 'trim', 'mileage', 'stock_number', 'exterior_color', 'features'])
-        if (v[k] != null && v[k] !== '') details[k] = String(v[k]);
-      if (v.price != null) details.price = `$${Number(v.price).toLocaleString()}`;
-      if (v.previous_price != null) details.previous_price = `$${Number(v.previous_price).toLocaleString()}`;
-      wiz = { ...freshWizard(), step: 'objective', condition: v.condition === 'new' ? 'new' : 'used', vehicleId: v.id, details, photos: [...(v.photos || [])] };
-    }
+    if (v) wiz = startFromVehicle(v);
   }
   if (wiz.step === 'condition') return renderCondition();
   if (wiz.step === 'objective') return renderObjective();
@@ -1241,6 +1386,60 @@ const goTo = (step) => {
   window.scrollTo(0, 0);
 };
 
+/** Everything the post needs from an inventory vehicle: the manager only picks the goal. */
+const VEHICLE_KEYS = ['year', 'make', 'model', 'trim', 'mileage', 'stock_number', 'exterior_color', 'features', 'price', 'previous_price'];
+function vehicleDetails(v) {
+  const details = {};
+  for (const k of ['year', 'make', 'model', 'trim', 'mileage', 'stock_number', 'exterior_color', 'features'])
+    if (v[k] != null && v[k] !== '') details[k] = String(v[k]);
+  if (v.price != null) details.price = `$${Number(v.price).toLocaleString()}`;
+  if (v.previous_price != null && v.previous_price > v.price) details.previous_price = `$${Number(v.previous_price).toLocaleString()}`;
+  return details;
+}
+function startFromVehicle(v) {
+  return { ...freshWizard(), step: 'objective', condition: v.condition === 'new' ? 'new' : 'used', vehicleId: v.id, vehicle: v, details: vehicleDetails(v), photos: [...(v.photos || [])] };
+}
+
+/** Search-as-you-type inventory picker (stock #, VIN, year, model…). Works with one thumb on a phone. */
+function vehiclePicker(root, { condition, selected, onPick, placeholder = 'Search inventory: stock #, VIN, model…' }) {
+  root.innerHTML = `<div class="picker">
+    <input type="search" class="picker-q" placeholder="${esc(placeholder)}" autocomplete="off" enterkeyhint="search" aria-label="Search inventory">
+    <div class="picker-results" role="listbox"></div></div>`;
+  const input = $('.picker-q', root);
+  const list = $('.picker-results', root);
+  let rows = [];
+  let seq = 0;
+  const search = async () => {
+    const mine = ++seq;
+    const q = new URLSearchParams({ status: 'available', limit: '8', ...(condition ? { condition } : {}), ...(input.value.trim() ? { q: input.value.trim() } : {}) });
+    const found = await api('GET', `/vehicles?${q}`).catch(() => []);
+    if (mine !== seq) return;
+    rows = found;
+    list.innerHTML =
+      rows
+        .map(
+          (v) => `<button type="button" class="picker-row ${selected === v.id ? 'selected' : ''}" data-pick="${v.id}" role="option">
+        <span class="picker-thumb">${v.photos[0] ? `<img src="${esc(v.photos[0])}" alt="" loading="lazy">` : '🚗'}</span>
+        <span class="picker-text"><strong>${esc([v.year, v.make, v.model].filter(Boolean).join(' '))}</strong> ${esc(v.trim)}
+        <span class="small muted">${esc([v.stock_number && `#${v.stock_number}`, v.mileage != null && `${num(v.mileage)} ${state.dealership.distance_unit}`].filter(Boolean).join(' · '))}</span></span>
+        <span class="picker-price">${money(v.price)}</span></button>`,
+        )
+        .join('') || `<div class="small muted" style="padding:10px 4px">${input.value.trim() ? 'No available vehicle matches.' : 'No vehicles in inventory yet.'}</div>`;
+  };
+  let timer;
+  input.oninput = () => {
+    clearTimeout(timer);
+    timer = setTimeout(search, 180);
+  };
+  input.onkeydown = (e) => e.key === 'Enter' && e.preventDefault();
+  list.onclick = (e) => {
+    const b = e.target.closest('[data-pick]');
+    const v = b && rows.find((r) => r.id === Number(b.dataset.pick));
+    if (v) onPick(v);
+  };
+  search();
+}
+
 async function renderCondition() {
   const [recent, accounts] = await Promise.all([api('GET', '/posts?limit=5'), api('GET', '/accounts')]);
   const connected = liveAccounts(accounts);
@@ -1250,6 +1449,7 @@ async function renderCondition() {
       <button class="cond-card cond-new" data-cond="new"><span class="cond-emoji" aria-hidden="true">✨</span><span class="cond-title">New vehicles</span><span class="cond-sub">Arrivals, monthly offers, demos, leftovers, events</span></button>
       <button class="cond-card cond-used" data-cond="used"><span class="cond-emoji" aria-hidden="true">🚗</span><span class="cond-title">Used vehicles</span><span class="cond-sub">Fresh arrivals, price drops, specials, trade-ins</span></button>
     </div>
+    <div class="card start-vehicle"><div class="card-head" style="margin-bottom:8px"><h3>Or start from a vehicle in stock</h3><span class="small muted">Type a stock #, VIN or model, tap the vehicle, pick a goal. Everything else is filled in.</span></div><div id="home-picker"></div></div>
     ${
       connected.length
         ? `<p class="small muted">Posting to: ${connected.map((a) => `${pIcon(a.platform)} ${esc(a.display_name)}`).join(' · ')}</p>`
@@ -1263,6 +1463,12 @@ async function renderCondition() {
         : ''
     }
   </div>`;
+  vehiclePicker($('#home-picker'), {
+    onPick: (v) => {
+      wiz = startFromVehicle(v);
+      goTo('objective');
+    },
+  });
   view.onclick = (e) => {
     const cond = e.target.closest('[data-cond]');
     if (cond) {
@@ -1274,11 +1480,18 @@ async function renderCondition() {
   };
 }
 
+function vehicleChip(v, changeable = false) {
+  return `<div class="vehicle-chip"><span class="picker-thumb">${v.photos?.[0] ? `<img src="${esc(v.photos[0])}" alt="">` : '🚗'}</span>
+    <span class="grow"><span class="small muted">From inventory</span><br><strong>${esc(vehicleName(v))}</strong>${v.stock_number ? ` <span class="muted">· #${esc(v.stock_number)}</span>` : ''}</span>
+    ${changeable ? '<button type="button" class="small" id="chip-clear">Change</button>' : ''}</div>`;
+}
+
 function renderObjective() {
   const list = state.meta.objectives[wiz.condition];
   view.innerHTML = `<div class="create">
     ${stepper(1)}
     <div class="row"><button class="small" id="back">← Back</button><h2 class="create-h">${wiz.condition === 'new' ? 'New vehicle' : 'Used vehicle'}: what’s the goal?</h2></div>
+    ${wiz.vehicle ? vehicleChip(wiz.vehicle) : ''}
     <div class="objective-grid">${list
       .map(
         (o) => `<button class="objective ${wiz.objective === o.key ? 'selected' : ''}" data-objective="${o.key}">
@@ -1299,7 +1512,6 @@ function renderObjective() {
 async function renderDetails() {
   const o = objectiveDef();
   const required = o.required ?? ['make', 'model'];
-  const vehicles = (await api('GET', '/vehicles?status=available')).filter((v) => (wiz.condition === 'new' ? v.condition === 'new' : v.condition !== 'new'));
   const fieldHtml = (key) => {
     const f = state.meta.fields[key];
     const label = `${esc(o.labels?.[key] || f.label)}${required.includes(key) ? ' <span class="req">*</span>' : ''}`;
@@ -1314,14 +1526,9 @@ async function renderDetails() {
     ${stepper(2)}
     <div class="row"><button type="button" class="small" id="back">← Back</button><h2 class="create-h">${o.emoji} ${esc(o.label)}</h2></div>
     ${
-      vehicles.length
-        ? `<label class="field" for="pick-vehicle"><span>Fill in from your inventory (optional)</span><select id="pick-vehicle"><option value="">Choose a vehicle…</option>${vehicles
-            .map(
-              (v) =>
-                `<option value="${v.id}" ${wiz.vehicleId === v.id ? 'selected' : ''}>${esc([v.year, v.make, v.model, v.trim].filter(Boolean).join(' '))}${v.stock_number ? ` · #${esc(v.stock_number)}` : ''}</option>`,
-            )
-            .join('')}</select></label>`
-        : ''
+      wiz.vehicle
+        ? vehicleChip(wiz.vehicle, true)
+        : `<details class="fill-from" ${wiz.details.make && !wiz.pickerOpen ? '' : 'open'}><summary>Fill in from inventory <span class="muted">(optional)</span></summary><div id="detail-picker"></div></details>`
     }
     <div class="form-grid compact">${o.fields.map(fieldHtml).join('')}</div>
     <div class="field full"><span class="small muted">Photos <span class="muted">(posts with photos get far more attention; Instagram needs one)</span></span>
@@ -1354,18 +1561,26 @@ async function renderDetails() {
     readForm();
     goTo('objective');
   };
-  const pick = $('#pick-vehicle');
-  if (pick)
-    pick.onchange = () => {
-      const v = vehicles.find((x) => x.id === Number(pick.value));
-      wiz.vehicleId = v ? v.id : null;
-      if (!v) return;
-      for (const key of o.fields) {
-        const val = v[key];
-        if (val != null && val !== '' && $(`#f-${key}`, form)) $(`#f-${key}`, form).value = key === 'price' && val ? `$${Number(val).toLocaleString()}` : val;
-      }
-      for (const url of v.photos || []) if (!wiz.photos.includes(url)) wiz.photos.push(url);
-      drawPhotos();
+  if ($('#detail-picker'))
+    vehiclePicker($('#detail-picker'), {
+      condition: wiz.condition === 'new' ? 'new' : 'used',
+      onPick: (v) => {
+        readForm();
+        wiz.vehicleId = v.id;
+        wiz.vehicle = v;
+        for (const k of VEHICLE_KEYS) delete wiz.details[k]; // replace the previous vehicle's facts, keep offer details
+        wiz.details = { ...wiz.details, ...vehicleDetails(v) };
+        for (const url of v.photos || []) if (!wiz.photos.includes(url)) wiz.photos.push(url);
+        goTo('details');
+      },
+    });
+  if ($('#chip-clear'))
+    $('#chip-clear').onclick = () => {
+      readForm();
+      wiz.vehicleId = null;
+      wiz.vehicle = null;
+      wiz.pickerOpen = true;
+      goTo('details');
     };
   $('#photo-grid').onclick = (e) => {
     const b = e.target.closest('[data-remove]');

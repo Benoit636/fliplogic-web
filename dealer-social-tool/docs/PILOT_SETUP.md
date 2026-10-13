@@ -63,6 +63,23 @@ or use **Add a dealership** in the `/admin` console.
 Forgot password: **Forgot your password?** on the login page emails a reset link (needs `RESEND_API_KEY`).
 Without email set up, a Dealer Admin can remove the person and invite them again.
 
+## 4. Load the inventory (Dealer Admin)
+
+1. Export the vehicle inventory from your DMS or website provider as **CSV** (in Excel: *File → Save As → CSV*).
+   English and French column names both work, and so do Excel's semicolon-separated files.
+2. **More tools → Inventory → Import CSV**, choose the file. You see a **preview** first (new / updated / no change / skipped,
+   and why) and nothing is saved until you click **Import**.
+3. Run the same import again whenever the inventory changes (daily is ideal). Vehicles are matched by **VIN**, then
+   **stock #**, so they are updated, never duplicated. Tick *Mark vehicles that aren't in this file as sold* to retire
+   vehicles that have left the lot (it only runs when the file has at least 3 vehicles).
+4. Columns read: stock #, VIN, year, make, model, trim, mileage/odometer, price, new/used, colour, features, photos
+   (links separated by `|`, spaces or commas). **Every other column is ignored and never saved**, so a DMS export that
+   includes customer or salesperson names is safe to use. An example file is on the import screen.
+5. Add or fix a vehicle by hand with **+ Add vehicle** / **Edit**, including photos taken on the phone.
+
+Staff can search the inventory (stock #, VIN, year, make, model, trim) and start a post from any vehicle:
+**Create Post → Or start from a vehicle in stock**, or **✨ Create post** on the inventory list. They can't import or edit vehicles.
+
 ## Security notes
 
 - Self-serve signup is **off** in production (`ALLOW_SIGNUP` unset), so nobody can create a dealership without you.

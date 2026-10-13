@@ -8,6 +8,9 @@
     OBJ = m;
     for (const o of m.OBJECTIVE_LIST) POST_TYPES[o.key] = `${o.condition === 'new' ? 'New' : 'Used'} · ${o.label}`;
   });
+  // Same CSV reading and vehicle rules as the server.
+  let CSV = null;
+  const csvReady = import('./shared/inventory-csv.js').then((m) => (CSV = m));
   const DAY = 86_400_000;
 
   const PLATFORMS = {
@@ -652,47 +655,122 @@
       return options.map(([platform, display_name], index) => ({ index, platform, display_name, external_id: 'demo', already_connected: state.accounts.some((x) => x.platform === platform && x.display_name === display_name && x.mode === 'live') }));
     }
     if (a === 'vehicles') {
+      // Same matching rules as the server: VIN first, then stock #; never a duplicate.
+      const clean = (input, partial) => {
+        const { vehicle, error } = CSV.normaliseVehicle(input || {}, { partial });
+        if (error) throw err(400, error);
+        return vehicle;
+      };
+      const matches = (v, exceptId = 0) => ({
+        byVin: v.vin ? state.vehicles.find((x) => x.id !== exceptId && x.vin === v.vin) : undefined,
+        byStock: v.stock_number ? state.vehicles.find((x) => x.id !== exceptId && x.stock_number === v.stock_number) : undefined,
+      });
+      const unique = (v, exceptId) => {
+        const { byVin, byStock } = matches(v, exceptId);
+        if (byVin) throw err(409, `VIN ${v.vin} is already in inventory: ${title(byVin)}`);
+        if (byStock) throw err(409, `Stock #${v.stock_number} is already used by ${title(byStock)}`);
+      };
+      const add = (v) => {
+        unique(v);
+        const row = { id: ++state.seq, stock_number: '', vin: '', year: null, trim: '', exterior_color: '', features: '', condition: 'used', price: null, mileage: null, photos: [], status: 'available', previous_price: null, sold_celebrated: 0, last_posted_at: null, created_at: iso(now()), updated_at: iso(now()), ...v };
+        row.photos = row.photos.filter((u) => !/\/\/(www\.)?example\.com\//.test(u)); // sample-file links don't exist
+        if (!row.photos.length) row.photos = [photo('#3d5a80', title(row))];
+        state.vehicles.push(row);
+        return row;
+      };
+      const patch = (row, v) => {
+        unique(v, row.id);
+        if (v.price != null && row.price != null && v.price < row.price) v.previous_price = row.price;
+        Object.assign(row, v, { updated_at: iso(now()) });
+        return row;
+      };
       if (b === 'import') {
-        const lines = String(body).trim().split(/\r?\n/);
-        const head = lines.shift().split(',').map((h) => h.trim().toLowerCase());
-        let created = 0;
-        for (const line of lines) {
-          const cells = line.split(',');
-          const get = (...names) => cells[head.findIndex((h) => names.includes(h))]?.trim();
-          if (!get('make') || !get('model')) continue;
-          state.vehicles.push({ id: ++state.seq, stock_number: get('stock', 'stock #', 'stock_number') || '', vin: get('vin') || '', year: Number(get('year')) || null, make: get('make'), model: get('model'), trim: get('trim') || '', condition: 'used', price: Number(String(get('price') || '').replace(/[^0-9.]/g, '')) || null, mileage: Number(String(get('mileage', 'odometer', 'km') || '').replace(/[^0-9]/g, '')) || null, exterior_color: get('color', 'exterior color') || '', features: get('features', 'options') || '', photos: [photo('#3d5a80', `${get('year') || ''} ${get('make')} ${get('model')}`)], status: 'available', previous_price: null, sold_celebrated: 0, last_posted_at: null, created_at: iso(now()), updated_at: iso(now()) });
-          created++;
+        const parsed = CSV.readInventoryCsv(String(body));
+        if (parsed.error) throw err(400, parsed.error);
+        const dry = q.dry_run === '1';
+        const snapshot = JSON.stringify({ v: state.vehicles, seq: state.seq });
+        const r = { dry_run: dry, total: parsed.items.length, created: 0, updated: 0, unchanged: 0, marked_sold: 0, duplicates_in_file: 0, errors: [], rows: [], mapped_columns: parsed.mapped, ignored_columns: parsed.ignored, warning: null };
+        const seen = new Set();
+        const keys = new Map();
+        for (const { line, vehicle: v, error } of parsed.items) {
+          const base = { line, title: v ? title(v) : '', stock_number: v?.stock_number || '', vin: v?.vin || '' };
+          const skip = (reason, action = 'error') => {
+            r.errors.push({ row: line, error: reason });
+            r.rows.push({ ...base, action, error: reason });
+          };
+          if (error) {
+            skip(error);
+            continue;
+          }
+          const k = [v.vin && `vin:${v.vin}`, v.stock_number && `stock:${v.stock_number}`].filter(Boolean);
+          const first = k.map((x) => keys.get(x)).find(Boolean);
+          if (first) {
+            r.duplicates_in_file++;
+            skip(`Same vehicle as line ${first}, skipped`, 'duplicate');
+            continue;
+          }
+          k.forEach((x) => keys.set(x, line));
+          const { byVin, byStock } = matches(v);
+          if (byVin && byStock && byVin !== byStock) {
+            skip(`VIN matches ${title(byVin)} but stock #${v.stock_number} belongs to ${title(byStock)}`);
+            continue;
+          }
+          const existing = byVin || byStock;
+          try {
+            if (existing) {
+              seen.add(existing.id);
+              const changes = Object.keys(v).filter((f) => JSON.stringify(existing[f] ?? null) !== JSON.stringify(v[f] ?? null));
+              if (!changes.length) {
+                r.unchanged++;
+                r.rows.push({ ...base, action: 'unchanged' });
+              } else {
+                patch(existing, v);
+                r.updated++;
+                r.rows.push({ ...base, action: 'update', changes });
+              }
+            } else {
+              seen.add(add(v).id);
+              r.created++;
+              r.rows.push({ ...base, action: 'create' });
+            }
+          } catch (e) {
+            skip(e.message);
+          }
         }
-        return { created, updated: 0, errors: [] };
+        if (q.mark_missing_sold === '1') {
+          if (seen.size < 3) r.warning = 'Nothing was marked sold: the file has fewer than 3 valid vehicles.';
+          else
+            for (const row of state.vehicles.filter((x) => x.status === 'available' && !seen.has(x.id))) {
+              row.status = 'sold';
+              r.marked_sold++;
+              r.rows.push({ line: null, action: 'sold', title: title(row), stock_number: row.stock_number, vin: row.vin });
+            }
+        }
+        if (dry) {
+          const back = JSON.parse(snapshot);
+          state.vehicles = back.v;
+          state.seq = back.seq;
+        } else log('user', 'inventory.imported', `${r.created} added, ${r.updated} updated`);
+        return r;
       }
       if (b === 'sync-feed') throw err(400, 'Add your inventory feed URL in Settings first');
       if (method === 'GET' && !b) {
         let rows = state.vehicles.slice().sort((x, y) => y.created_at.localeCompare(x.created_at));
-        if (q.status) rows = rows.filter((v) => v.status === q.status);
-        if (q.q) rows = rows.filter((v) => `${v.year} ${v.make} ${v.model} ${v.trim} ${v.stock_number}`.toLowerCase().includes(q.q.toLowerCase()));
-        return rows;
+        if (q.status && q.status !== 'all') rows = rows.filter((v) => v.status === q.status);
+        if (q.condition === 'new') rows = rows.filter((v) => v.condition === 'new');
+        if (q.condition === 'used') rows = rows.filter((v) => v.condition !== 'new');
+        for (const word of String(q.q || '').toLowerCase().split(/\s+/).filter(Boolean))
+          rows = rows.filter((v) => `${v.year} ${v.make} ${v.model} ${v.trim} ${v.stock_number} ${v.vin} ${v.exterior_color}`.toLowerCase().includes(word));
+        return rows.slice(0, Number(q.limit) || 500);
       }
-      if (method === 'POST') {
-        const v = { id: ++state.seq, stock_number: '', vin: '', trim: '', exterior_color: '', features: '', condition: 'used', status: 'available', previous_price: null, sold_celebrated: 0, last_posted_at: null, created_at: iso(now()), updated_at: iso(now()), ...body };
-        v.year = Number(v.year) || null;
-        v.price = v.price ? Number(v.price) : null;
-        v.mileage = v.mileage ? Number(v.mileage) : null;
-        v.photos = v.photos?.length ? v.photos : [photo('#3d5a80', `${v.year || ''} ${v.make} ${v.model}`)];
-        state.vehicles.push(v);
-        return v;
-      }
+      if (method === 'POST') return add(clean(body));
       const v = state.vehicles.find((x) => x.id === idOf(b));
       if (!v) throw err(404, 'Vehicle not found');
       if (method === 'DELETE') {
         state.vehicles = state.vehicles.filter((x) => x !== v);
         return null;
       }
-      if (method === 'PATCH') {
-        const price = body.price ? Number(body.price) : v.price;
-        if (price < v.price) v.previous_price = v.price;
-        Object.assign(v, body, { price, year: Number(body.year ?? v.year) || null, mileage: body.mileage ? Number(body.mileage) : v.mileage, updated_at: iso(now()) });
-        if (!v.photos?.length) v.photos = [photo('#3d5a80', title(v))];
-      }
+      if (method === 'PATCH') patch(v, clean(body, true));
       return v;
     }
     if (a === 'posts') {
@@ -857,7 +935,7 @@
     if (typeof body === 'string' && (init.headers?.['content-type'] || '').includes('json')) body = JSON.parse(body);
     await new Promise((r) => setTimeout(r, path.includes('/chat') || path.includes('/generate') ? 700 : 60));
     try {
-      await objectivesReady;
+      await Promise.all([objectivesReady, csvReady]);
       const data = await route(method, path, Object.fromEntries(url.searchParams), body);
       save();
       if (data === null) return new Response(null, { status: 204 });
