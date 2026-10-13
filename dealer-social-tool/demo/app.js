@@ -704,7 +704,7 @@ function vehicleForm(v = {}) {
       <div class="photo-grid" id="veh-photos"></div>
       <div class="row">
         <label class="btn small" for="veh-photo-input">📷 Add photos</label>
-        <input type="file" id="veh-photo-input" accept="image/jpeg,image/png,image/webp,image/*" multiple hidden>
+        <input type="file" id="veh-photo-input" accept="image/jpeg,image/png,image/webp" multiple hidden>
         <input id="veh-photo-url" placeholder="…or paste a photo link (https://)" style="flex:1;min-width:180px">
         <span class="small muted" id="veh-photo-status"></span>
       </div>
@@ -1037,7 +1037,7 @@ views.analytics = async () => {
     </div>
     <div class="card"><div class="card-head"><h2>Daily reach</h2></div>
       <div class="bars">${a.series.map((s) => `<div class="bar" style="height:${(s.reach / max) * 100}%" title="${s.day}: ${num(s.reach)} reach, ${s.posts} posts"></div>`).join('')}</div>
-      <div class="bars-axis"><span>${a.series[0]?.day || ''}</span><span>${a.series.at(-1)?.day || ''}</span></div></div>
+      <div class="bars-axis"><span>${a.series[0]?.day || ''}</span><span>${a.series[a.series.length - 1]?.day || ''}</span></div></div>
     <div class="grid cols-2">
       <div class="card"><div class="card-head"><h2>By platform</h2></div><div class="table-wrap"><table><tr><th>Platform</th><th class="num">Posts</th><th class="num">Reach</th><th class="num">Eng. rate</th></tr>
         ${a.by_platform.map((r) => `<tr><td>${pIcon(r.platform)} ${esc(r.label)}</td><td class="num">${r.posts}</td><td class="num">${num(r.reach)}</td><td class="num">${r.engagement_rate}%</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No data yet</td></tr>'}</table></div></div>
@@ -1143,11 +1143,14 @@ views.settings = async () => {
         <label class="field"><span>Time zone (autopilot schedules use it)</span><select name="timezone">${timezones(d.timezone)}</select></label>
         <label class="field full"><span>Inventory feed URL (CSV from your DMS or website provider — synced every 6 hours, Pro plan)</span><input name="inventory_feed_url" value="${esc(d.inventory_feed_url)}" placeholder="https://…/inventory.csv"></label>
         <label class="check full" style="border-radius:8px"><input type="checkbox" name="feed_marks_sold" value="1" ${d.feed_marks_sold ? 'checked' : ''}> Mark vehicles as sold when they disappear from the feed (creates “sold” celebration posts)</label>
-        <label class="field full"><span>CRM lead email (leads from comments, DMs and reviews are forwarded in ADF/XML — the format your CRM already accepts)</span><input name="crm_lead_email" type="email" value="${esc(d.crm_lead_email || '')}" placeholder="leads@yourstore.crm-provider.com"></label>
+        ${state.meta.pilot_mode ? '' : `<label class="field full"><span>CRM lead email (leads from comments, DMs and reviews are forwarded in ADF/XML — the format your CRM already accepts)</span><input name="crm_lead_email" type="email" value="${esc(d.crm_lead_email || '')}" placeholder="leads@yourstore.crm-provider.com"></label>`}
         ${d.feed_last_synced_at ? `<div class="full small muted">Last feed sync ${ago(d.feed_last_synced_at)}: ${esc(d.feed_last_result)}</div>` : ''}
         ${canEdit ? '<div class="full row"><span class="spacer"></span><button class="primary">Save profile</button></div>' : ''}
       </div></fieldset></form>
-    <div class="card"><div class="card-head"><h2>Connected accounts</h2><div class="actions"><button class="small" id="acct-add">Advanced: add manually</button></div></div>
+    ${
+      state.meta.pilot_mode
+        ? `<div class="card"><div class="card-head"><h2>Social accounts</h2><span class="badge">Pilot</span></div><p class="small muted" style="margin:0">Facebook, Instagram and LinkedIn are not connected during the pilot. Every post is approved here by a Dealer Admin, then posted by hand from <strong>My Posts → Ready to post</strong> (copy the caption, save the image, tap “I posted it”).</p></div>`
+        : `<div class="card"><div class="card-head"><h2>Connected accounts</h2><div class="actions"><button class="small" id="acct-add">Advanced: add manually</button></div></div>
       <div class="row" style="margin-bottom:10px">${Object.entries(state.meta.oauth)
         .map(
           ([k, o]) =>
@@ -1157,7 +1160,8 @@ views.settings = async () => {
       <p class="small muted">Connect your pages once and Create Post can publish to them directly. Until a page is connected, you get ready-to-copy posts instead. <strong>Practice</strong> accounts are for training only: nothing is really posted.</p>
       <div class="table-wrap"><table><tr><th>Platform</th><th>Name</th><th>Mode</th><th>Token</th><th>On</th><th></th></tr>
       ${accounts.map((a) => `<tr><td>${pIcon(a.platform)} ${esc(platformLabel(a.platform))}</td><td>${esc(a.display_name)}${a.last_error ? `<div class="small" style="color:var(--bad)">⚠️ ${esc(a.last_error)}</div>` : ''}</td><td><span class="badge ${a.mode === 'live' ? 'good' : ''}">${a.mode === 'live' ? 'Connected' : 'Practice'}</span></td><td class="small muted">${esc(a.token_hint || '—')}</td><td><input type="checkbox" data-aon="${a.id}" ${a.enabled ? 'checked' : ''}></td><td><button class="small" data-aedit="${a.id}">Edit</button> <button class="small danger" data-adel="${a.id}">✕</button></td></tr>`).join('') || '<tr><td colspan="6"><div class="empty">No accounts yet</div></td></tr>'}
-      </table></div></div>
+      </table></div></div>`
+    }
     <form class="card" id="pw-form"><div class="card-head"><h2>Your password</h2></div><div class="form-grid">
       <label class="field"><span>Current password</span><input type="password" name="current_password" required autocomplete="current-password"></label>
       <label class="field"><span>New password (10+ characters)</span><input type="password" name="new_password" required minlength="10" autocomplete="new-password"></label>
@@ -1230,7 +1234,7 @@ views.settings = async () => {
       });
     };
   };
-  $('#acct-add').onclick = () => accountEditor(null);
+  if ($('#acct-add')) $('#acct-add').onclick = () => accountEditor(null);
   view.onclick = (e) => {
     const b = e.target.closest('button');
     if (b?.dataset.oauth) act(b, () => api('POST', `/oauth/${b.dataset.oauth}/start`)).then((r) => r && (location.href = r.url));
@@ -1391,14 +1395,33 @@ function stepper(active) {
   return `<ol class="stepper" aria-label="Progress">${STEPS.map((s, i) => `<li class="${i < active ? 'done' : i === active ? 'current' : ''}">${s}</li>`).join('')}</ol>`;
 }
 
+/** Decode a photo for resizing: createImageBitmap where supported, an <img> otherwise (older iPhones). */
+async function decodePhoto(file) {
+  try {
+    return await createImageBitmap(file, { imageOrientation: 'from-image' });
+  } catch {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      return img; // browsers apply the photo's rotation (EXIF) to <img>
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+  }
+}
+
 async function shrinkPhoto(file) {
   // Phones produce 4–12 MB photos; 1600px JPEG is plenty for social and uploads fast on LTE.
   try {
-    const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
-    const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+    const bitmap = await decodePhoto(file);
+    const w = bitmap.width || bitmap.naturalWidth;
+    const h = bitmap.height || bitmap.naturalHeight;
+    const scale = Math.min(1, 1600 / Math.max(w, h));
     const canvas = document.createElement('canvas');
-    canvas.width = Math.round(bitmap.width * scale);
-    canvas.height = Math.round(bitmap.height * scale);
+    canvas.width = Math.round(w * scale);
+    canvas.height = Math.round(h * scale);
     canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.86));
     return blob || file;
@@ -1508,7 +1531,9 @@ async function renderCondition() {
     </div>
     <div class="card start-vehicle"><div class="card-head" style="margin-bottom:8px"><h3>Or start from a vehicle in stock</h3><span class="small muted">Type a stock #, VIN or model, tap the vehicle, pick a goal. Everything else is filled in.</span></div><div id="home-picker"></div></div>
     ${
-      connected.length
+      state.meta.pilot_mode
+        ? ''
+        : connected.length
         ? `<p class="small muted">Posting to: ${connected.map((a) => `${pIcon(a.platform)} ${esc(a.display_name)}`).join(' · ')}</p>`
         : `<div class="banner info">🔗 No social accounts connected yet. You can still create posts and copy them to Facebook, Instagram or LinkedIn yourself. <a class="btn small" href="#/settings">Connect accounts</a></div>`
     }
@@ -1592,7 +1617,7 @@ async function renderDetails() {
       <div class="photo-grid" id="photo-grid"></div>
       <div class="row">
         <label class="btn" for="photo-input">📷 Add photos</label>
-        <input type="file" id="photo-input" accept="image/jpeg,image/png,image/webp,image/*" multiple hidden>
+        <input type="file" id="photo-input" accept="image/jpeg,image/png,image/webp" multiple hidden>
         <span class="small muted" id="photo-status"></span>
       </div>
     </div>
@@ -1808,7 +1833,7 @@ async function renderReview() {
       ${
         manager
           ? `<button class="primary big" id="publish"></button>${noneConnected ? '' : '<button id="schedule">🕒 Schedule</button>'}`
-          : `<button class="primary big" id="submit">Send to my manager for approval</button>`
+          : `<button class="primary big" id="submit">Send for approval</button>`
       }
       <button id="save-draft">Save draft</button>
     </div>
@@ -1843,7 +1868,7 @@ async function renderReview() {
   const refreshButtons = () => {
     const connectedCount = selected().filter((p) => live.has(p.platform)).length;
     const pub = $('#publish');
-    if (pub) pub.textContent = connectedCount ? `Approve & publish now (${connectedCount} account${connectedCount === 1 ? '' : 's'})` : 'Approve & get it ready to post';
+    if (pub) pub.textContent = connectedCount ? `Approve & publish now (${connectedCount} account${connectedCount === 1 ? '' : 's'})` : 'Approve & post it';
     const sch = $('#schedule');
     if (sch) sch.disabled = !connectedCount;
     for (const id of ['publish', 'submit', 'save-draft']) if ($(`#${id}`)) $(`#${id}`).disabled = !selected().length;
@@ -2072,7 +2097,7 @@ function renderDone() {
     ${r.some((x) => x.outcome !== 'manual') ? `<ul class="result-list">${r.map(line).join('')}</ul>` : ''}
     ${
       manual.length
-        ? `<div class="stack"><p class="muted" style="margin:0">Facebook, Instagram and LinkedIn aren’t connected, so post it yourself: copy the caption, save the image, open the app, then tap <strong>I posted it</strong>.</p>
+        ? `<div class="stack"><p class="muted" style="margin:0">${state.meta.pilot_mode ? 'During the pilot you post it yourself' : 'Facebook, Instagram and LinkedIn aren’t connected, so post it yourself'}: copy the caption, save the image, open the app, then tap <strong>I posted it</strong>.</p>
         ${manual.map(({ post }) => kitCard(post)).join('')}</div>`
         : ''
     }
@@ -2180,6 +2205,9 @@ async function loadShell() {
   state.meta = meta;
   state.dealership = dealer;
   state.livePlatforms = new Set(liveAccounts(accounts).map((a) => a.platform));
+  // Pilot: only the pilot's screens are shown (the server switches the rest off too).
+  $$('[data-pilot-off]').forEach((el) => (el.hidden = !!meta.pilot_mode));
+  $$('[data-pilot-only]').forEach((el) => (el.hidden = !meta.pilot_mode));
   renderUserBox();
   renderBanner();
   $('#dealer-name').textContent = dealer.dealer_number ? `${dealer.name} · #${dealer.dealer_number}` : dealer.name;
@@ -2192,9 +2220,11 @@ async function loadShell() {
   $('#mode-badge').innerHTML = dealer.autonomy === 'autopilot' ? '<a href="#/autopilot" class="badge good">🚀 Autopilot on</a>' : '';
 }
 
+const PILOT_OFF_VIEWS = ['dashboard', 'calendar', 'inbox', 'assistant', 'autopilot', 'analytics', 'billing'];
+
 async function route() {
   let name = (location.hash.replace(/^#\//, '').split('?')[0] || 'create').trim();
-  if (!views[name]) name = 'create';
+  if (!views[name] || (state.meta?.pilot_mode && PILOT_OFF_VIEWS.includes(name))) name = 'create';
   const render = views[name];
   $$('#nav a, #tabbar a').forEach((a) => a.classList.toggle('active', a.dataset.view === name));
   if ($('#nav-more a.active')) $('#nav-more').open = true;

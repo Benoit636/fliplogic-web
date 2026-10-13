@@ -4,9 +4,12 @@ import { createApp } from './app.js';
 import { aiEnabled } from './ai/client.js';
 import { stripeEnabled } from './services/billing.js';
 import { startWorker, stopWorker } from './services/worker.js';
+import { checkConfig, printConfigReport } from './preflight.js';
 
-if (isProduction && config.appSecret === 'dev-insecure-secret-change-me') {
-  console.error("APP_SECRET must be set in production (it encrypts your customers' social tokens).");
+const report = checkConfig();
+printConfigReport(report);
+if (isProduction && report.errors.length) {
+  console.error('Fix the problems above, then start again.');
   process.exit(1);
 }
 

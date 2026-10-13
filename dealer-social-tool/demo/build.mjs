@@ -49,6 +49,7 @@ write(
     [
       ['<title>Dealer Social</title>', '<title>Dealer Social — Live demo</title>'],
       ['    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />\n', ''],
+      ['    <link rel="manifest" href="/manifest.webmanifest" />\n    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />\n', ''],
       ['<script type="module" src="app.js"></script>', '<script src="mock-api.js" charset="utf-8"></script>\n    <script type="module" src="app.js"></script>'],
       [
         '      <main>\n        <header class="topbar">',

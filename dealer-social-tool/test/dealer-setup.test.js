@@ -223,3 +223,15 @@ test('inventory over HTTP: admin previews and imports a CSV, staff search and pi
   assert.equal(post.data.posts[0].vehicle_id, found.data[0].id);
   assert.equal((await client()('GET', '/api/vehicles')).status, 401);
 });
+
+test('sessions end after inactivity, and sign-ins are recorded', async () => {
+  const { run } = await import('../src/db.js');
+  const { config } = await import('../src/config.js');
+  const d = createDealerWithAdmin({ name: 'Idle Motors', adminEmail: 'gm@idle.example' });
+  const admin = client();
+  await admin('POST', `/api/auth/invite/${tokenOf(d.invite_url)}/accept`, { name: 'Ida', password: 'Quiet-Showroom-12' });
+  assert.equal((await admin('GET', '/api/me')).status, 200);
+  assert.ok(get(`SELECT 1 FROM activity_log WHERE dealership_id = ? AND action = 'auth.login' AND details = 'gm@idle.example'`, d.dealership.id));
+  run(`UPDATE sessions SET last_seen_at = ?`, new Date(Date.now() - (config.sessionIdleHours + 1) * 3_600_000).toISOString());
+  assert.equal((await admin('GET', '/api/me')).status, 401, 'signed out after the idle period');
+});

@@ -6,6 +6,9 @@
     <title>Dealer Social</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="styles.css" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#f5f5f7" />
   </head>
   <body>
     <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -38,19 +41,20 @@
           <a href="#/create" data-view="create" class="nav-primary"><svg class="ico"><use href="#i-create"/></svg> Create Post</a>
           <a href="#/posts" data-view="posts"><svg class="ico"><use href="#i-posts"/></svg> My Posts</a>
           <a href="#/approvals" data-view="approvals"><svg class="ico"><use href="#i-approve"/></svg> Approvals <span class="count" id="count-approvals"></span></a>
+          <a href="#/inventory" data-view="inventory" data-pilot-only hidden><svg class="ico"><use href="#i-car"/></svg> Inventory</a>
           <a href="#/settings" data-view="settings"><svg class="ico"><use href="#i-settings"/></svg> Accounts &amp; Settings</a>
           <details class="nav-more" id="nav-more">
             <summary>More tools</summary>
-            <a href="#/dashboard" data-view="dashboard"><svg class="ico"><use href="#i-overview"/></svg> Overview</a>
-            <a href="#/calendar" data-view="calendar"><svg class="ico"><use href="#i-calendar"/></svg> Calendar</a>
+            <a href="#/dashboard" data-view="dashboard" data-pilot-off><svg class="ico"><use href="#i-overview"/></svg> Overview</a>
+            <a href="#/calendar" data-view="calendar" data-pilot-off><svg class="ico"><use href="#i-calendar"/></svg> Calendar</a>
             <a href="#/studio" data-view="studio"><svg class="ico"><use href="#i-doc"/></svg> Other posts (events, tips…)</a>
-            <a href="#/inventory" data-view="inventory"><svg class="ico"><use href="#i-car"/></svg> Inventory</a>
-            <a href="#/inbox" data-view="inbox"><svg class="ico"><use href="#i-inbox"/></svg> Inbox <span class="count" id="count-inbox"></span></a>
-            <a href="#/assistant" data-view="assistant"><svg class="ico"><use href="#i-sparkles"/></svg> AI Assistant</a>
-            <a href="#/autopilot" data-view="autopilot"><svg class="ico"><use href="#i-bolt"/></svg> Autopilot</a>
-            <a href="#/analytics" data-view="analytics"><svg class="ico"><use href="#i-chart"/></svg> Analytics</a>
+            <a href="#/inventory" data-view="inventory" data-pilot-off><svg class="ico"><use href="#i-car"/></svg> Inventory</a>
+            <a href="#/inbox" data-view="inbox" data-pilot-off><svg class="ico"><use href="#i-inbox"/></svg> Inbox <span class="count" id="count-inbox"></span></a>
+            <a href="#/assistant" data-view="assistant" data-pilot-off><svg class="ico"><use href="#i-sparkles"/></svg> AI Assistant</a>
+            <a href="#/autopilot" data-view="autopilot" data-pilot-off><svg class="ico"><use href="#i-bolt"/></svg> Autopilot</a>
+            <a href="#/analytics" data-view="analytics" data-pilot-off><svg class="ico"><use href="#i-chart"/></svg> Analytics</a>
             <a href="#/team" data-view="team"><svg class="ico"><use href="#i-team"/></svg> Team</a>
-            <a href="#/billing" data-view="billing"><svg class="ico"><use href="#i-card"/></svg> Plan &amp; Billing</a>
+            <a href="#/billing" data-view="billing" data-pilot-off><svg class="ico"><use href="#i-card"/></svg> Plan &amp; Billing</a>
           </details>
         </nav>
         <div class="ai-status" id="ai-status"></div>
@@ -69,7 +73,8 @@
     <nav class="tabbar" id="tabbar" aria-label="Main">
       <a href="#/create" data-view="create"><svg class="ico"><use href="#i-create"/></svg>Create</a>
       <a href="#/posts" data-view="posts"><svg class="ico"><use href="#i-posts"/></svg>My Posts</a>
-      <a href="#/settings" data-view="settings"><svg class="ico"><use href="#i-settings"/></svg>Accounts</a>
+      <a href="#/settings" data-view="settings" data-pilot-off><svg class="ico"><use href="#i-settings"/></svg>Accounts</a>
+      <a href="#/inventory" data-view="inventory" data-pilot-only hidden><svg class="ico"><use href="#i-car"/></svg>Inventory</a>
       <button type="button" id="tab-more"><svg class="ico"><use href="#i-more"/></svg>More</button>
     </nav>
     <div id="modal-root"></div>

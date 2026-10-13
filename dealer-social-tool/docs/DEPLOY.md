@@ -73,18 +73,18 @@ The app uses this address in emails, invite links and when connecting Facebook.
 *Optional, later:* use your own address, such as `app.yourdomain.com`. In the service, go to **Settings → Custom Domains**,
 add the domain, create the DNS record Render shows you, and then change `APP_URL` to the new address.
 
-## 5. Check that it works (5 minutes)
+## 5. Check that it works and create the dealership (5 minutes)
 
 1. Open `https://<your address>/healthz`. It should show `{"ok":true}`.
-2. Open `https://<your address>/signup` and create the dealership:
-   - Dealership name: **Volkswagen Moncton**
-   - Your name, `benoitboudreau@vwmoncton.com`, and a password
-3. You land in the app on a 14-day Pro trial. Because your email is in `SUPERADMIN_EMAILS`, you also see **Admin**.
-4. Make a test post: **Create Post → Used vehicles → Fresh Arrival**, type a make and model, and tap
-   **Write my post**. If the API key is missing or wrong, a yellow *“AI writing is off”* notice shows at the
-   bottom of the menu (only admins see it) and posts come from templates.
+2. Render → your service → **Shell**, then run `npm run check`. It must print no ✖ lines.
+3. In the same Shell, create Volkswagen Moncton (Dealer #001) and your Dealer Admin login:
+   `npm run create-dealer -- --preset vw-moncton --admin-email benoitboudreau@vwmoncton.com`
+4. Open the setup link it prints, enter your name and choose your password. Because your email is in
+   `SUPERADMIN_EMAILS`, you also see **Admin**.
+5. Make a test post: **Create Post → Used vehicles → Fresh Arrival**, type a make and model, and tap **Create my post**.
 
-Next: fill in **Accounts & Settings → Dealership profile**, then connect Facebook (see `LAUNCH_CHECKLIST.md`, section 5).
+Next: follow [`PILOT_SETUP.md`](PILOT_SETUP.md) (profile and logo, inviting staff, inventory, the daily routine and the
+iPhone check). During the pilot (`PILOT_MODE=1`, set by `render.yaml`) social accounts are not connected.
 
 ## Updating the app later
 

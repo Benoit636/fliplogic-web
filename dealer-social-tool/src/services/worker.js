@@ -68,12 +68,13 @@ export async function tick() {
   if (running) return;
   running = true;
   try {
-    await forEachDealership(dealershipsWithDueRules(), 'autopilot', () => runDueRules());
+    if (!config.pilotMode) await forEachDealership(dealershipsWithDueRules(), 'autopilot', () => runDueRules());
     await forEachDealership(dealershipsWithDuePosts(), 'publisher', () => publishDuePosts());
 
     // Heavier network work every ~10 ticks (5 minutes at the default interval).
     if (ticks % 10 === 0) {
-      await forEachDealership(allDealershipIds(), 'sync', async () => {
+      // Pilot: nothing is read back from social networks (comments carry customers' personal information).
+      if (!config.pilotMode) await forEachDealership(allDealershipIds(), 'sync', async () => {
         await refreshMetrics();
         await syncComments();
       });
@@ -84,8 +85,10 @@ export async function tick() {
       });
     }
     if (ticks % 120 === 0) {
-      await sendTrialReminders();
-      await sendMonthlyReports();
+      if (!config.pilotMode) {
+        await sendTrialReminders();
+        await sendMonthlyReports();
+      }
       run('DELETE FROM sessions WHERE expires_at < ?', nowIso());
       const today = new Date().toISOString().slice(0, 10);
       if (today !== lastBackupDay && config.env !== 'test') {

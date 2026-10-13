@@ -61,14 +61,15 @@ export function createDealership({ name, timezone, dealerNumber }) {
     if (!DEALER_NUMBER.test(number)) throw httpError(400, 'Dealer number must be 3 to 6 digits, like 001');
     if (getDealershipByNumber(number)) throw httpError(409, `Dealer #${number} already exists`);
   }
-  const trialEnds = new Date(Date.now() + config.trialDays * 86_400_000).toISOString();
+  const trialEnds = config.pilotMode ? null : new Date(Date.now() + config.trialDays * 86_400_000).toISOString();
   const { lastInsertRowid } = run(
     `INSERT INTO dealerships (dealer_number, name, timezone, plan, subscription_status, status_changed_at, trial_ends_at)
-     VALUES (?, ?, ?, ?, 'trialing', ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
     number,
     name.trim(),
     timezone && isValidTimeZone(timezone) ? timezone : 'America/Moncton',
     TRIAL_PLAN,
+    config.pilotMode ? 'comped' : 'trialing',
     nowIso(),
     trialEnds,
   );

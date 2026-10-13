@@ -24,6 +24,9 @@ export function savePhoto(buffer) {
   if (buffer.length > MAX_PHOTO_BYTES) throw httpError(413, 'Photos must be under 10 MB');
   // Trust the file's bytes, not its name or content type.
   const type = SIGNATURES.find((s) => s.test(buffer));
+  if (!type && /^ftyp(heic|heix|hevc|mif1|msf1|avif)/.test(buffer.subarray(4, 12).toString('latin1'))) {
+    throw httpError(400, 'That’s an iPhone HEIC photo. Choose it again from the Photos picker (it converts to JPG), or set Camera → Formats → Most Compatible.');
+  }
   if (!type) throw httpError(400, 'That file is not a JPG, PNG or WebP photo');
   const dir = path.join(config.mediaDir, String(tenantId()));
   fs.mkdirSync(dir, { recursive: true });

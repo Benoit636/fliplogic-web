@@ -83,6 +83,8 @@ test('photos: only real JPG/PNG/WebP files are stored', () => {
   assert.match(url, /^\/media\/\d+\/[\w-]+\.jpg$/);
   assert.throws(() => savePhoto(Buffer.from('<svg onload=alert(1)></svg>')), /not a JPG/);
   assert.throws(() => savePhoto(Buffer.alloc(0)), /Upload a JPG/);
+  const heic = Buffer.concat([Buffer.from([0, 0, 0, 24]), Buffer.from('ftypheic'), Buffer.alloc(32)]);
+  assert.throws(() => savePhoto(heic), /iPhone HEIC photo/);
   assert.deepEqual(cleanMediaList([url, 'javascript:alert(1)', '/etc/passwd', 'https://cdn.example/a.jpg']), [url, 'https://cdn.example/a.jpg']);
   assert.match(absoluteMediaUrl(url), /^http:\/\/localhost:\d+\/media\//);
 });

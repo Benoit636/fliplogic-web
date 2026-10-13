@@ -16,6 +16,8 @@ services:
         value: production
       - key: APP_SECRET
         generateValue: true
+      - key: PILOT_MODE
+        value: '1'
       - key: APP_URL
         sync: false
       - key: SUPERADMIN_EMAILS

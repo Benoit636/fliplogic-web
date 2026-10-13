@@ -39,6 +39,11 @@ export const config = {
   // Self-serve signup (anyone can create a dealership). Off in production unless ALLOW_SIGNUP=1:
   // during the pilot, dealerships are created with `npm run create-dealer` and staff join by invite.
   allowSignup: env.ALLOW_SIGNUP ? env.ALLOW_SIGNUP === '1' : env.NODE_ENV !== 'production',
+  // Pilot: no social-network connections, no inbox (customer messages/personal information), no AI chat,
+  // autopilot or billing. Dealerships are complimentary. Everything else (posts, approval, inventory) works.
+  pilotMode: env.PILOT_MODE === '1',
+  // Signed-in sessions end after this many hours without any activity (and always after 30 days).
+  sessionIdleHours: Number(env.SESSION_IDLE_HOURS || 14 * 24),
 
   anthropicApiKey: env.ANTHROPIC_API_KEY || '',
   aiModel: env.AI_MODEL || 'claude-opus-5-5',

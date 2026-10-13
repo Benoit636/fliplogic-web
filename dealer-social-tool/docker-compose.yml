@@ -9,6 +9,7 @@ services:
       DATABASE_PATH: /data/dealer-social.db
       BACKUP_DIR: /data/backups
       MEDIA_DIR: /data/media
+      PILOT_MODE: "1"
     ports:
       - "3000:3000"
     volumes:

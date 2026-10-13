@@ -59,6 +59,20 @@ const admin = (req, res, next) => {
   next();
 };
 
+// --- pilot mode: features outside the pilot are switched off on the server, not just hidden ---
+const PILOT_OFF = [
+  { re: /^\/(inbox|oauth|chat)(\/|$)/, methods: 'all' }, // customer messages & personal information; social connections; AI chat
+  { re: /^\/(accounts|autopilot)(\/|$)/, methods: 'write' },
+  { re: /^\/billing\/(checkout|portal)$/, methods: 'all' },
+  { re: /^\/analytics\/refresh$/, methods: 'all' },
+];
+api.use((req, res, next) => {
+  if (!config.pilotMode) return next();
+  const off = PILOT_OFF.find((r) => r.re.test(req.path) && (r.methods === 'all' || req.method !== 'GET'));
+  if (off) return next(httpError(403, 'This feature is switched off during the pilot'));
+  next();
+});
+
 // --- meta ---
 api.get('/meta', (req, res) => {
   res.json({
@@ -79,6 +93,7 @@ api.get('/meta', (req, res) => {
     user: req.session.user,
     product_name: config.productName,
     support_email: config.supportEmail,
+    pilot_mode: config.pilotMode,
   });
 });
 

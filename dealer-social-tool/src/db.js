@@ -306,6 +306,11 @@ const MIGRATIONS = [
     PRIMARY KEY (dealership_id, source_url)
   );
   `,
+  // 7: pilot: sessions also end after a period of inactivity
+  `
+  ALTER TABLE sessions ADD COLUMN last_seen_at TEXT;
+  UPDATE sessions SET last_seen_at = created_at;
+  `,
 ];
 export { MIGRATIONS };
 

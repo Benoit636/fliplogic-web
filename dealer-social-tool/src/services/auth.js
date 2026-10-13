@@ -46,13 +46,19 @@ export function createSession(userId, dealershipId = null) {
   const token = randomToken();
   const dealership = dealershipId ?? get('SELECT dealership_id FROM memberships WHERE user_id = ? ORDER BY created_at LIMIT 1', userId)?.dealership_id ?? null;
   run(
-    'INSERT INTO sessions (token_hash, user_id, dealership_id, expires_at) VALUES (?, ?, ?, ?)',
+    'INSERT INTO sessions (token_hash, user_id, dealership_id, expires_at, last_seen_at) VALUES (?, ?, ?, ?, ?)',
     sha256(token),
     userId,
     dealership,
     new Date(Date.now() + SESSION_DAYS * 86_400_000).toISOString(),
+    nowIso(),
   );
   run('UPDATE users SET last_login_at = ? WHERE id = ?', nowIso(), userId);
+  // Sign-ins are part of the dealership's activity log (who, when) for the pilot audit trail.
+  if (dealership) {
+    const u = get('SELECT email FROM users WHERE id = ?', userId);
+    run('INSERT INTO activity_log (dealership_id, actor, action, details) VALUES (?, ?, ?, ?)', dealership, 'user', 'auth.login', u?.email || '');
+  }
   return token;
 }
 
@@ -61,6 +67,12 @@ export function getSession(token) {
   if (!token) return null;
   const s = get('SELECT * FROM sessions WHERE token_hash = ? AND expires_at > ?', sha256(token), nowIso());
   if (!s) return null;
+  const idleMs = Date.now() - new Date(s.last_seen_at || s.created_at).getTime();
+  if (idleMs > config.sessionIdleHours * 3_600_000) {
+    run('DELETE FROM sessions WHERE token_hash = ?', s.token_hash);
+    return null;
+  }
+  if (idleMs > 5 * 60_000) run('UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?', nowIso(), s.token_hash);
   const user = get('SELECT * FROM users WHERE id = ?', s.user_id);
   if (!user) return null;
   let membership = s.dealership_id ? get('SELECT * FROM memberships WHERE user_id = ? AND dealership_id = ?', user.id, s.dealership_id) : null;

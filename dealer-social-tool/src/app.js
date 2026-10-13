@@ -102,6 +102,7 @@ export function createApp() {
 
   // OAuth redirect target for "Connect" buttons.
   app.get('/oauth/:provider/callback', async (req, res) => {
+    if (config.pilotMode) return res.redirect('/app#/settings?connect_error=Social%20accounts%20are%20not%20connected%20during%20the%20pilot');
     if (req.query.error) return res.redirect(`/app#/settings?connect_error=${encodeURIComponent(req.query.error_description || req.query.error)}`);
     try {
       const row = await completeOAuth(req.params.provider, req.query.state, req.query.code);
@@ -119,7 +120,7 @@ export function createApp() {
     res.sendStatus(403);
   });
   app.post('/webhooks/meta', async (req, res) => {
-    if (!validMetaSignature(req)) return res.sendStatus(403);
+    if (config.pilotMode || !validMetaSignature(req)) return res.sendStatus(403);
     res.sendStatus(200); // acknowledge fast, then process
     for (const entry of req.body?.entry || []) {
       const platform = req.body.object === 'instagram' ? 'instagram' : 'facebook';

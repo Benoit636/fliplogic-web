@@ -607,6 +607,14 @@ fieldset:disabled input, fieldset:disabled select, fieldset:disabled textarea { 
 @media (max-width: 900px) {
   .image-card { grid-template-columns: 1fr; gap: 14px; }
 }
+@media (max-width: 420px) {
+  .action-bar { flex-wrap: nowrap; gap: 8px; }
+  .action-bar .big { font-size: 16px; padding: 12px 14px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .action-bar > button:not(.primary), .action-bar > a { flex-shrink: 0; padding-inline: 12px; }
+}
+@media (max-width: 900px) {
+  #toast-root { bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+}
 
 .demo-bar { background: var(--warn-soft); color: var(--warn); padding: 8px 24px; font-size: 13px; border-bottom: 1px solid var(--border); }
 .demo-bar a { color: inherit; font-weight: 600; }

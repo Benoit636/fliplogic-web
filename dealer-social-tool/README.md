@@ -13,7 +13,10 @@ owner) see every customer, your revenue and usage in an admin console. Stripe ha
 - **Pilot setup (Dealer #001, first admin, inviting staff):** [`docs/PILOT_SETUP.md`](docs/PILOT_SETUP.md)
 - **Step-by-step launch checklist (accounts to create, keys to paste):** [`docs/LAUNCH_CHECKLIST.md`](docs/LAUNCH_CHECKLIST.md)
 
-## Pilot workflow (Phase 1–3)
+## Pilot workflow
+
+- **Runbook:** [`docs/PILOT_SETUP.md`](docs/PILOT_SETUP.md) (deploy, first admin, staff, inventory, daily routine, iPhone check, backups) and the one-page [`docs/STAFF_QUICK_START.md`](docs/STAFF_QUICK_START.md).
+- **Pilot mode:** `PILOT_MODE=1` switches off social connections, the inbox (customer personal information), AI chat, autopilot and billing on the server; pilot dealerships are complimentary. `npm run check` validates the configuration (the server runs it at startup too).
 
 - **Dealerships & logins:** `npm run create-dealer` creates a dealership (Dealer #001…) and a single-use setup link for its Dealer Admin; staff join by personal invite. See [`docs/PILOT_SETUP.md`](docs/PILOT_SETUP.md).
 - **Inventory:** CSV import with preview, matched by VIN then stock # (never duplicated), searchable list, vehicle → post in a few taps.
