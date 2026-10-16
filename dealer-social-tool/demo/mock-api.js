@@ -1,7 +1,7 @@
 // In-browser stand-in for the Dealer Social server, so the real dashboard can be tried with
 // sample data and no account. It answers the same /api routes; nothing leaves the browser.
 (function () {
-  const STORE_KEY = 'dealer-social-demo-v4';
+  const STORE_KEY = 'dealer-social-demo-v5';
   // Same goals, fields and template copy as the real server.
   let OBJ = null;
   const objectivesReady = import('./shared/objectives.js').then((m) => {
@@ -73,6 +73,21 @@
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
   }
 
+  // Sample website check (the real app opens each vehicle's page on the dealership's website).
+  function sampleValidation() {
+    const FIELDS = ['vin', 'stock_number', 'trim', 'price', 'mileage', 'photos', 'availability'];
+    const results = state.vehicles.filter((v) => v.status === 'available').slice(0, 10).map((v, i) => {
+      const checks = Object.fromEntries(FIELDS.map((f) => [f, { status: 'pass', ours: v[f] ?? '', site: v[f] ?? '' }]));
+      if (i === 2) checks.price = { status: 'fail', ours: v.price, site: v.price - 1000, detail: `ours ${money(v.price)}, website ${money(v.price - 1000)}` };
+      if (i === 4) checks.photos = { status: 'missing', detail: 'the website has 12 photos, the feed has 1' };
+      if (i === 1) checks.trim = { status: 'not_shown', detail: 'the website page does not show the trim' };
+      const result = Object.values(checks).some((c) => c.status === 'fail') ? 'fail' : 'pass';
+      return { vehicle_id: v.id, title: title(v), stock_number: v.stock_number, url: v.detail_url, result, checks };
+    });
+    const passed = results.filter((r) => r.result === 'pass').length;
+    return { checked_at: iso(now()), website: state.dealership.website, passed, failed: results.length - passed, not_checked: 0, results, sample: true };
+  }
+
   // ---------- seed ----------
   function seed() {
     const t = now();
@@ -82,7 +97,7 @@
       brand_voice: 'Warm, upbeat and neighbourly. Proudly local. Straight talk, no pressure. A little playful with emojis on Instagram and TikTok.',
       default_hashtags: '#RiversideMotors #Moncton', call_to_action: 'Book your test drive today — call us or send a DM!',
       compliance_notes: 'Prices exclude taxes and fees. Vehicle subject to prior sale.', autonomy: 'assist', language: 'English', caption_language: 'bilingual', call_to_action_fr: 'Réservez votre essai routier dès aujourd’hui!', compliance_notes_fr: 'Taxes et frais en sus. Véhicule sujet à vente préalable.', require_approval: 1,
-      distance_unit: 'km', timezone: 'America/Moncton', inventory_feed_url: '', feed_marks_sold: 1, feed_last_synced_at: null,
+      distance_unit: 'km', timezone: 'America/Moncton', inventory_feed_url: 'https://feeds.example-provider.com/…', inventory_feed_configured: true, inventory_sync_minutes: 60, feed_marks_sold: 1, feed_last_synced_at: iso(t - 23 * 60_000),
       feed_last_result: '', crm_lead_email: '', plan: 'pro', billing_interval: 'month', subscription_status: 'trialing',
       trial_ends_at: iso(t + 11 * DAY), current_period_end: null, stripe_customer_id: null,
     };
@@ -101,11 +116,22 @@
     }));
     vehicles[4].status = 'sold';
     vehicles[6].previous_price = 42900;
+    // Everything below comes from the (sample) inventory feed: VIN, website page, demo flag, removals.
+    const VINS = ['1V2BR2CA5SC512345', '3VV2B7AX8RM067890', '1FTFW1E58NFA24680', '2T3RWRFV1PW135791', '2HGFE2F51MH102468', 'WVGDMPE29SP013579', '1C4HJXEG3LW246813'];
+    vehicles.forEach((v, i) => Object.assign(v, { vin: VINS[i], source: 'feed', last_seen_at: iso(t - 23 * 60_000), detail_url: `https://www.example-dealer.com/inventory/${v.year}-${v.make}-${v.model}-${v.stock_number}`.toLowerCase().replace(/\s+/g, '-') }));
+    Object.assign(vehicles[5], { is_demo: true, mileage: 1450 });
+    vehicles[4].removed_at = iso(t - 2 * DAY);
 
+    const syncs = [1, 2, 3, 4, 5].map((h, i) => ({
+      id: 6 - h, started_at: iso(t - (h * 60 - 37) * 60_000), finished_at: iso(t - (h * 60 - 37) * 60_000 + 4000), ok: 1, trigger: 'schedule', format: 'meta-xml',
+      total: 7, created: 0, updated: i === 2 ? 1 : 0, unchanged: i === 2 ? 6 : 7, removed: 0, skipped: 0,
+      message: i === 2 ? '7 vehicles: 1 updated (price), 6 unchanged' : '7 vehicles: no changes',
+    }));
     const s = {
+      syncs, validation: null, validating_since: 0,
       dealership: d, vehicles, posts: [], inbox: [], activity: [], chats: {}, usage: { ai_posts: 0, ai_chat_turns: 0 }, seq: 100,
       accounts: [
-        { id: 1, platform: 'facebook', display_name: 'Riverside Motors', mode: 'simulated', external_id: '', has_token: false, token_hint: '', enabled: true, last_error: null },
+        { id: 1, platform: 'facebook', display_name: 'Riverside Motors – Test Page', mode: 'live', external_id: 'demo', has_token: true, token_hint: '••••demo', enabled: true, publish_allowed: 1, is_test: 1, last_error: null },
         { id: 2, platform: 'instagram', display_name: '@riversidemotors', mode: 'simulated', external_id: '', has_token: false, token_hint: '', enabled: true, last_error: null },
         { id: 3, platform: 'google_business', display_name: 'Riverside Motors – Moncton', mode: 'simulated', external_id: '', has_token: false, token_hint: '', enabled: true, last_error: null },
         { id: 4, platform: 'tiktok', display_name: '@riversidemotors', mode: 'simulated', external_id: '', has_token: false, token_hint: '', enabled: true, last_error: null },
@@ -328,6 +354,12 @@
     p.published_at = iso(now());
     p.external_id = `sim_${p.platform}_${p.id}`;
     p.external_url = '';
+    const acct = state.accounts.find((a) => a.platform === p.platform && a.enabled);
+    if (acct?.mode === 'live' && p.platform === 'facebook') {
+      // The real app reads the post back from Facebook and checks it; the demo shows what that looks like.
+      const v = state.vehicles.find((x) => x.id === p.vehicle_id);
+      p.publish_check = { checked_at: iso(now()), ok: true, photo: (p.media || []).length > 0, caption: true, price: v?.price ? true : null, link: v?.detail_url ? true : null };
+    }
     p.error = null;
     if (p.vehicle_id) {
       const v = state.vehicles.find((x) => x.id === p.vehicle_id);
@@ -660,9 +692,20 @@
       return options.map(([platform, display_name], index) => ({ index, platform, display_name, external_id: 'demo', already_connected: state.accounts.some((x) => x.platform === platform && x.display_name === display_name && x.mode === 'live') }));
     }
     if (a === 'inventory') {
-      if (b === 'syncs') return { feed_configured: !!d.inventory_feed_url, feed: d.inventory_feed_url ? `${(d.inventory_feed_url.match(/^https?:\/\/[^/]+/) || [''])[0]}/…` : '', every_minutes: d.inventory_sync_minutes || 60, last_synced_at: null, last_error: '', failures: 0, syncs: [] };
-      if (b === 'validation') return { running: false, report: null };
-      if (b === 'validate') throw err(400, 'The demo has no dealership website to check. On the real app this compares 10 vehicles with their pages on your website.');
+      if (b === 'syncs') return { feed_configured: !!d.inventory_feed_url, feed: d.inventory_feed_url ? `${(d.inventory_feed_url.match(/^https?:\/\/[^/…]+/) || [''])[0]}/…` : '', every_minutes: d.inventory_sync_minutes || 60, last_synced_at: d.feed_last_synced_at, last_error: '', failures: 0, syncs: state.syncs || [] };
+      if (b === 'validate') {
+        state.validating_since = now();
+        return { running: true };
+      }
+      if (b === 'validation') {
+        const running = state.validating_since && now() - state.validating_since < 6000;
+        if (state.validating_since && !running) {
+          state.validation = sampleValidation();
+          state.validating_since = 0;
+          log('user', 'inventory.validated', `${state.validation.passed} passed, ${state.validation.failed} failed`);
+        }
+        return { running: !!running, report: state.validation };
+      }
     }
     if (a === 'vehicles') {
       // Same matching rules as the server: VIN first, then stock #; never a duplicate.
@@ -763,7 +806,18 @@
         } else log('user', 'inventory.imported', `${r.created} added, ${r.updated} updated`);
         return r;
       }
-      if (b === 'sync-feed') throw err(400, 'Add your inventory feed URL in Settings first');
+      if (b === 'sync-feed') {
+        if (!d.inventory_feed_url) throw err(400, 'Add your inventory feed URL in Settings first');
+        const live = state.vehicles.filter((v) => !v.removed_at);
+        const message = `${live.length} vehicles: no changes`;
+        state.syncs = state.syncs || [];
+        state.syncs.unshift({ id: (state.syncs[0]?.id || 0) + 1, started_at: iso(now()), finished_at: iso(now()), ok: 1, trigger: 'manual', format: 'meta-xml', total: live.length, created: 0, updated: 0, unchanged: live.length, removed: 0, skipped: 0, message });
+        d.feed_last_synced_at = iso(now());
+        d.feed_last_result = message;
+        live.forEach((v) => (v.last_seen_at = d.feed_last_synced_at));
+        log('user', 'inventory.synced', message);
+        return { summary: message, created: 0, updated: 0, removed: 0 };
+      }
       if (method === 'GET' && !b) {
         let rows = state.vehicles.slice().sort((x, y) => y.created_at.localeCompare(x.created_at));
         if (q.status && q.status !== 'all') rows = rows.filter((v) => v.status === q.status);
