@@ -612,7 +612,10 @@
     if (a === 'dealership') {
       if (method === 'PUT') {
         if (body.autonomy === 'autopilot' && !PLANS[d.plan].features.autopilot) throw err(402, 'Full autopilot is available on the Pro plan and above');
-        Object.assign(d, body, { feed_marks_sold: body.feed_marks_sold === undefined ? d.feed_marks_sold : body.feed_marks_sold ? 1 : 0 });
+        const { remove_inventory_feed, ...fields } = body;
+        Object.assign(d, fields, { feed_marks_sold: body.feed_marks_sold === undefined ? d.feed_marks_sold : body.feed_marks_sold ? 1 : 0 });
+        if (remove_inventory_feed) d.inventory_feed_url = '';
+        d.inventory_feed_configured = !!d.inventory_feed_url;
         log('user', 'dealership.updated', body.autonomy ? `autonomy: ${body.autonomy}` : 'profile');
       }
       return d;
@@ -647,13 +650,19 @@
         for (const i of body.indexes || []) {
           const [platform, name] = options[i];
           const existing = state.accounts.find((x) => x.platform === platform && x.display_name === name);
-          if (existing) Object.assign(existing, { mode: 'live', token_hint: '••••demo', has_token: true });
-          else state.accounts.push({ id: ++state.seq, platform, display_name: name, mode: 'live', external_id: 'demo', has_token: true, token_hint: '••••demo', enabled: true, last_error: null });
+          // Demo only: pages publish straight away (nothing is really posted). On a real server the platform owner unlocks them.
+          if (existing) Object.assign(existing, { mode: 'live', token_hint: '••••demo', has_token: true, publish_allowed: 1 });
+          else state.accounts.push({ id: ++state.seq, platform, display_name: name, mode: 'live', external_id: 'demo', has_token: true, token_hint: '••••demo', enabled: true, publish_allowed: 1, is_test: 0, last_error: null });
         }
         log('user', 'account.connected', `${(body.indexes || []).length} account(s) via ${provider}`);
         return { connected: (body.indexes || []).length };
       }
       return options.map(([platform, display_name], index) => ({ index, platform, display_name, external_id: 'demo', already_connected: state.accounts.some((x) => x.platform === platform && x.display_name === display_name && x.mode === 'live') }));
+    }
+    if (a === 'inventory') {
+      if (b === 'syncs') return { feed_configured: !!d.inventory_feed_url, feed: d.inventory_feed_url ? `${(d.inventory_feed_url.match(/^https?:\/\/[^/]+/) || [''])[0]}/…` : '', every_minutes: d.inventory_sync_minutes || 60, last_synced_at: null, last_error: '', failures: 0, syncs: [] };
+      if (b === 'validation') return { running: false, report: null };
+      if (b === 'validate') throw err(400, 'The demo has no dealership website to check. On the real app this compares 10 vehicles with their pages on your website.');
     }
     if (a === 'vehicles') {
       // Same matching rules as the server: VIN first, then stock #; never a duplicate.

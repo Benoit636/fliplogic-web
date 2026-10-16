@@ -96,3 +96,42 @@ export function adminUpdateDealership(id, { plan, subscription_status, extend_tr
   }
   return updateBilling(id, patch);
 }
+
+// ---------- Facebook Page locks (platform owner only) ----------
+
+export function listPages() {
+  return all(
+    `SELECT a.id, a.platform, a.display_name, a.external_id, a.is_test, a.publish_allowed, a.unlocked_by, a.unlocked_at, a.last_error,
+            d.id AS dealership_id, d.name AS dealership, d.dealer_number
+     FROM accounts a JOIN dealerships d ON d.id = a.dealership_id WHERE a.mode = 'live' ORDER BY d.dealer_number, a.platform, a.id`,
+  );
+}
+
+/**
+ * Allow publishing to one Page. The platform owner types the Page name to confirm; a live (customer-facing)
+ * Page also needs `approve_live: true`, so nothing reaches a dealership's real Page by accident.
+ */
+export function unlockPage(id, { confirm_name, kind, approve_live, by }) {
+  const page = get(`SELECT * FROM accounts WHERE id = ? AND mode = 'live'`, id);
+  if (!page) throw httpError(404, 'Page not found');
+  if (String(confirm_name || '').trim() !== page.display_name) throw httpError(400, `Type the Page name exactly ("${page.display_name}") to confirm`);
+  if (!['test', 'live'].includes(kind)) throw httpError(400, 'Choose whether this is a test Page or the live Page');
+  if (kind === 'live' && approve_live !== true) throw httpError(400, 'Publishing to a live Page needs explicit approval');
+  run('UPDATE accounts SET publish_allowed = 1, is_test = ?, unlocked_by = ?, unlocked_at = ? WHERE id = ?', kind === 'test' ? 1 : 0, by, new Date().toISOString(), id);
+  run(
+    'INSERT INTO activity_log (dealership_id, actor, action, details) VALUES (?, ?, ?, ?)',
+    page.dealership_id,
+    'platform',
+    'page.unlocked',
+    `${page.display_name} (${kind === 'test' ? 'test Page' : 'LIVE Page'}) by ${by}`,
+  );
+  return listPages().find((p) => p.id === id);
+}
+
+export function lockPage(id, by) {
+  const page = get(`SELECT * FROM accounts WHERE id = ? AND mode = 'live'`, id);
+  if (!page) throw httpError(404, 'Page not found');
+  run('UPDATE accounts SET publish_allowed = 0 WHERE id = ?', id);
+  run('INSERT INTO activity_log (dealership_id, actor, action, details) VALUES (?, ?, ?, ?)', page.dealership_id, 'platform', 'page.locked', `${page.display_name} by ${by}`);
+  return listPages().find((p) => p.id === id);
+}

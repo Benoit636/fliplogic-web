@@ -1,5 +1,6 @@
 // The New/Used "Create Post" flow: objectives, briefs, photos, manual posting.
 import assert from 'node:assert/strict';
+import { run } from '../src/db.js';
 import { tenantTest as test } from './helpers.js';
 import { createPostsFromIdea } from '../src/services/content.js';
 import { getPost, markPostedManually, approvePost } from '../src/services/posts.js';
@@ -103,7 +104,8 @@ test('posting by hand is recorded honestly: no invented engagement', async () =>
 });
 
 test('live publishing sends full photo addresses to the network', async () => {
-  createAccount({ platform: 'linkedin', display_name: 'Test Motors', mode: 'live', external_id: '42', access_token: 'tok' });
+  const li = createAccount({ platform: 'linkedin', display_name: 'Test Motors', mode: 'live', external_id: '42', access_token: 'tok' });
+  run('UPDATE accounts SET publish_allowed = 1 WHERE id = ?', li.id); // unlocked by the platform owner
   const { posts } = await createPostsFromIdea({
     postType: 'new_model_spotlight',
     details: { model: 'ID.4', make: 'Volkswagen' },

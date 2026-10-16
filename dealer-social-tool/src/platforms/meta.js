@@ -19,11 +19,25 @@ async function graph(method, pathName, token, params = {}) {
 export const facebookAdapter = {
   async publish(post, account, text) {
     const photo = post.media?.[0];
-    const result = photo
-      ? await graph('POST', `${account.external_id}/photos`, account.access_token, { url: photo, caption: text })
-      : await graph('POST', `${account.external_id}/feed`, account.access_token, { message: text });
+    let result;
+    if (post.photoFile) {
+      // Our own image is uploaded directly, so Facebook doesn't need to download it from our server.
+      const form = new FormData();
+      form.set('caption', text);
+      form.set('access_token', account.access_token);
+      form.set('source', new Blob([post.photoFile.buffer], { type: post.photoFile.type }), post.photoFile.name);
+      result = (await request(graphUrl(`${account.external_id}/photos`), { method: 'POST', multipart: form, timeout: 120_000 })).body;
+    } else if (photo) result = await graph('POST', `${account.external_id}/photos`, account.access_token, { url: photo, caption: text });
+    else result = await graph('POST', `${account.external_id}/feed`, account.access_token, { message: text });
     const id = result.post_id || result.id;
-    return { external_id: id, external_url: `https://www.facebook.com/${id}`, metrics: {} };
+    // Read the post back to confirm what Facebook actually shows.
+    const shown = await graph('GET', id, account.access_token, { fields: 'message,permalink_url,full_picture,created_time' }).catch(() => null);
+    return {
+      external_id: id,
+      external_url: shown?.permalink_url || `https://www.facebook.com/${id}`,
+      metrics: {},
+      shown: shown && { message: shown.message || '', has_picture: !!shown.full_picture, permalink_url: shown.permalink_url || '' },
+    };
   },
   async fetchMetrics(post, account) {
     const r = await graph('GET', post.external_id, account.access_token, {
@@ -89,9 +103,14 @@ export const instagramAdapter = {
 };
 
 // ---- OAuth (Facebook Login) ----
+const PILOT_SCOPES = ['pages_show_list', 'pages_read_engagement', 'pages_manage_posts'];
 export const metaOAuth = {
   configured: () => !!(config.metaAppId && config.metaAppSecret),
-  scopes: [
+  get scopes() {
+    // Pilot: only what's needed to post on a Facebook Page (no Instagram, inbox or comments).
+    return config.pilotMode ? PILOT_SCOPES : this.allScopes;
+  },
+  allScopes: [
     'pages_show_list',
     'pages_read_engagement',
     'pages_manage_posts',
@@ -127,7 +146,7 @@ export const metaOAuth = {
     for (const page of pages.data || []) {
       options.push({ platform: 'facebook', external_id: page.id, display_name: page.name, access_token: page.access_token });
       const ig = page.instagram_business_account;
-      if (ig) options.push({ platform: 'instagram', external_id: ig.id, display_name: `@${ig.username || page.name}`, access_token: page.access_token });
+      if (ig && !config.pilotMode) options.push({ platform: 'instagram', external_id: ig.id, display_name: `@${ig.username || page.name}`, access_token: page.access_token });
     }
     return options;
   },

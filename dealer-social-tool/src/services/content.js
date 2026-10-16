@@ -26,6 +26,10 @@ export async function createPostsFromIdea({
 }) {
   const vehicle = vehicleId ? getVehicle(Number(vehicleId)) : null;
   if (vehicleId && !vehicle) throw httpError(404, `Vehicle ${vehicleId} not found`);
+  // Sold or removed vehicles are never promoted (a "sold" celebration is the one exception).
+  if (vehicle && vehicle.status !== 'available' && postType !== 'sold_celebration') {
+    throw httpError(409, `${vehicleTitle(vehicle)} is no longer available (${vehicle.removed_at ? 'removed from the inventory feed' : vehicle.status}), so it can't be promoted.`);
+  }
 
   const lang = ['en', 'fr', 'bilingual'].includes(language) ? language : getDealership().caption_language || 'en';
   const reserved = new Set(platforms).size || 1;
@@ -38,6 +42,9 @@ export async function createPostsFromIdea({
     throw err;
   }
   const { engine, variants } = generated;
+  if (generated.fact_check?.length) {
+    logActivity('system', 'content.fact_check', generated.fact_check.map((r) => `${r.platform}: ${r.problems.join('; ')}`).join(' | ').slice(0, 900));
+  }
   const objective = OBJECTIVE_BY_KEY[postType];
   const brief = objective ? { condition: objective.condition, objective: postType, details: generated.details } : {};
   const batchId = crypto.randomUUID();

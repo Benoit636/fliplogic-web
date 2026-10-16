@@ -6,6 +6,9 @@ import { aiEnabled, getClient, baseParams, assertNotRefused } from './client.js'
 import { COPYWRITER_RULES, dealershipBrief, postRequest, objectiveRequest } from './prompts.js';
 import { fallbackPost } from './fallback.js';
 import { OBJECTIVE_BY_KEY, missingFields, writeObjectivePost } from '../shared/objectives.js';
+import { unverifiedClaims } from './claims.js';
+
+const LINK_PLATFORMS = ['facebook', 'linkedin', 'x', 'google_business'];
 
 const PostVariants = z.object({
   variants: z.array(
@@ -23,7 +26,7 @@ const PostVariants = z.object({
 export function detailsFromVehicle(v) {
   if (!v) return {};
   const out = {};
-  for (const k of ['year', 'make', 'model', 'trim', 'mileage', 'price', 'previous_price', 'stock_number', 'exterior_color', 'features']) {
+  for (const k of ['year', 'make', 'model', 'trim', 'mileage', 'price', 'previous_price', 'stock_number', 'exterior_color', 'features', 'detail_url']) {
     if (v[k] != null && v[k] !== '') out[k] = String(v[k]);
   }
   return out;
@@ -75,9 +78,19 @@ export async function generatePostVariants({ postType, vehicle = null, details =
     engine = 'claude';
   }
 
+  // Fact guard: AI copy that states a price, discount, percentage or financing offer that isn't in the
+  // vehicle data is thrown away and replaced by template copy written only from the facts.
+  const known = facts || detailsFromVehicle(vehicle);
+  const rejected = [];
+  variants = variants.filter((v) => {
+    const problems = unverifiedClaims(`${v.content} ${(v.hashtags || []).join(' ')}`, known, dealer);
+    if (problems.length) rejected.push({ platform: v.platform, problems });
+    return !problems.length;
+  });
   const byPlatform = new Map(variants.filter((v) => wanted.includes(v.platform)).map((v) => [v.platform, v]));
   return {
     engine,
+    fact_check: rejected,
     details: facts,
     variants: wanted.map((platform) => {
       const v =
@@ -85,7 +98,9 @@ export async function generatePostVariants({ postType, vehicle = null, details =
         (objective
           ? writeObjectivePost({ objectiveKey: postType, details: facts, dealer, platform, rules: PLATFORMS[platform], language })
           : fallbackPost({ postType, vehicle, platform, instructions, dealer }));
-      return { ...v, platform, hashtags: v.hashtags.map((t) => (t.startsWith('#') ? t : `#${t}`)) };
+      // The vehicle's page on the dealership website, so people can see it (where links work in captions).
+      const link = known?.detail_url && LINK_PLATFORMS.includes(platform) && !v.content.includes(known.detail_url) ? `\n\n🔗 ${known.detail_url}` : '';
+      return { ...v, content: `${v.content}${link}`, platform, hashtags: v.hashtags.map((t) => (t.startsWith('#') ? t : `#${t}`)) };
     }),
   };
 }

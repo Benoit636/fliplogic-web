@@ -27,7 +27,7 @@ const STATUS_CLASS = { active: 'good', comped: 'good', trialing: 'info', past_du
 let filter = '';
 
 async function render() {
-  const { totals: t, dealerships } = await api('GET', '/overview');
+  const [{ totals: t, dealerships }, pages] = await Promise.all([api('GET', '/overview'), api('GET', '/pages')]);
   const rows = dealerships.filter((d) => !filter || `${d.name} ${d.owner_email} ${d.city}`.toLowerCase().includes(filter));
   view.innerHTML = `
     <div class="kpis">
@@ -52,6 +52,27 @@ async function render() {
       </div>
       <div id="new-dealer-link" class="small" style="margin-top:8px"></div>
     </form>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head"><h2>Facebook Pages</h2><span class="small muted">Nothing is published to a Page until you unlock it. Unlock a test Page first; a dealership’s live Page only with the dealer’s explicit approval.</span></div>
+      <div class="table-wrap"><table>
+        <tr><th>Dealership</th><th>Page</th><th>Status</th><th></th></tr>
+        ${
+          pages
+            .map(
+              (p) => `<tr>
+          <td>${esc(p.dealership)}<div class="small muted">Dealer #${esc(p.dealer_number || p.dealership_id)}</div></td>
+          <td><strong>${esc(p.display_name)}</strong><div class="small muted">${esc(p.platform)} · ID ${esc(p.external_id)}</div>${p.last_error ? `<div class="small" style="color:var(--bad)">${esc(p.last_error)}</div>` : ''}</td>
+          <td>${p.publish_allowed ? `<span class="badge ${p.is_test ? 'info' : 'good'}">${p.is_test ? 'Test Page — on' : 'LIVE Page — on'}</span><div class="small muted">${esc(p.unlocked_by || '')} · ${date(p.unlocked_at)}</div>` : '<span class="badge warn">🔒 Locked</span>'}</td>
+          <td><div class="row" style="flex-wrap:nowrap">${
+            p.publish_allowed
+              ? `<button class="small danger" data-lock="${p.id}">Lock</button>`
+              : `<button class="small" data-unlock="${p.id}" data-kind="test" data-name="${esc(p.display_name)}">Unlock as test Page</button><button class="small danger" data-unlock="${p.id}" data-kind="live" data-name="${esc(p.display_name)}">Unlock live Page…</button>`
+          }</div></td></tr>`,
+            )
+            .join('') || '<tr><td colspan="4"><div class="empty">No Pages connected yet</div></td></tr>'
+        }
+      </table></div>
+    </div>
     <div class="card">
       <div class="card-head"><h2>Customers</h2><input id="search" placeholder="Search dealership, owner, city…" value="${esc(filter)}" style="max-width:320px;margin-left:auto"></div>
       <div class="table-wrap"><table>
@@ -124,6 +145,20 @@ view.addEventListener('click', async (e) => {
       const r = await api('POST', `/dealerships/${encodeURIComponent(b.dataset.adminLink)}/admin-invite`, { admin_email: email.trim() });
       showLink(`Single-use setup link for ${email.trim()}:`, r.invite_url);
       window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    if (b.dataset.unlock) {
+      const live = b.dataset.kind === 'live';
+      const typed = prompt(`${live ? 'LIVE Page: posts will appear on the dealership’s real Facebook Page.\n' : ''}Type the Page name to confirm: ${b.dataset.name}`);
+      if (!typed) return;
+      if (live && !confirm(`Has the dealership explicitly approved publishing to “${b.dataset.name}”? Every post still needs a Dealer Admin’s approval.`)) return;
+      await api('POST', `/pages/${b.dataset.unlock}/unlock`, { confirm_name: typed.trim(), kind: b.dataset.kind, approve_live: live });
+      toast(live ? 'Live Page unlocked' : 'Test Page unlocked');
+      render();
+    }
+    if (b.dataset.lock) {
+      await api('POST', `/pages/${b.dataset.lock}/lock`);
+      toast('Page locked');
+      render();
     }
     if (b.dataset.trial) {
       await api('PATCH', `/dealerships/${b.dataset.trial}`, { extend_trial_days: 14 });

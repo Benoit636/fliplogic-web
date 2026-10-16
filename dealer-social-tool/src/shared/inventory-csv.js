@@ -1,5 +1,6 @@
-// Reading inventory CSV exports (DMS, website provider, Excel). Pure functions shared by the server and the browser demo.
-// Only the vehicle columns below are read; any other column (customer names, costs, notes…) is ignored and never stored.
+// Reading inventory exports and feeds: CSV/TSV (DMS, Excel), the Facebook/Meta automotive catalog feed (XML or CSV)
+// and other provider XML feeds with the usual field names. Pure functions shared by the server and the browser demo.
+// Only the vehicle fields below are read; anything else (customer names, costs, notes…) is ignored and never stored.
 
 export const MAX_ROWS = 5000;
 export const MAX_PHOTOS = 20;
@@ -16,20 +17,23 @@ export const headerKey = (h) =>
 
 // English and Canadian-French names that DMS and website exports use for each field.
 const ALIASES = {
-  stock_number: ['stock', 'stock #', 'stock number', 'stock no', 'stocknumber', 'stock_no', 'stk', 'stk #', 'no de stock', 'n° de stock', 'numéro de stock', 'inventaire', 'no inventaire'],
-  vin: ['vin', 'vin #', 'vin number', 'niv', 'no de série', 'numéro de série', 'serial number'],
+  stock_number: ['stock', 'stock #', 'stock number', 'stock no', 'stocknumber', 'stock_no', 'stk', 'stk #', 'no de stock', 'n° de stock', 'numéro de stock', 'inventaire', 'no inventaire', 'stock_id'],
+  vin: ['vin', 'vin #', 'vin number', 'niv', 'no de série', 'numéro de série', 'serial number', 'vehicle_identification_number'],
   year: ['year', 'model year', 'yr', 'année', 'annee', 'année modèle'],
   make: ['make', 'manufacturer', 'brand', 'marque', 'fabricant'],
   model: ['model', 'modèle', 'modele'],
   trim: ['trim', 'series', 'trim level', 'version', 'garniture', 'niveau'],
-  condition: ['condition', 'type', 'new/used', 'new_used', 'new or used', 'stock type', 'état', 'etat', 'neuf/usagé', 'neuf/occasion', 'catégorie'],
-  price: ['price', 'internet price', 'selling price', 'sale price', 'list price', 'msrp', 'our price', 'prix', 'prix de vente', 'prix internet', 'prix affiché'],
-  mileage: ['mileage', 'miles', 'odometer', 'kilometers', 'kilometres', 'km', 'kms', 'odometer km', 'kilométrage', 'kilometrage', 'odomètre'],
+  condition: ['condition', 'type', 'new/used', 'new_used', 'new or used', 'stock type', 'état', 'etat', 'neuf/usagé', 'neuf/occasion', 'catégorie', 'state_of_vehicle', 'vehicle condition', 'inventory type'],
+  price: ['price', 'internet price', 'selling price', 'sale price', 'list price', 'our price', 'prix', 'prix de vente', 'prix internet', 'prix affiché', 'sale_price', 'msrp'],
+  mileage: ['mileage', 'miles', 'odometer', 'kilometers', 'kilometres', 'km', 'kms', 'odometer km', 'kilométrage', 'kilometrage', 'odomètre', 'mileage.value', 'mileage value'],
   exterior_color: ['color', 'colour', 'exterior color', 'exterior colour', 'ext color', 'couleur', 'couleur extérieure'],
   features: ['features', 'options', 'description', 'highlights', 'équipements', 'equipements', 'caractéristiques', 'options et équipements'],
-  photos: ['photos', 'photo', 'images', 'image', 'image urls', 'image_urls', 'photo urls', 'photo_urls', 'picture urls', 'imagelist', 'image list'],
-  status: ['status', 'statut', 'disponibilité'],
+  photos: ['photos', 'photo', 'images', 'image', 'image urls', 'image_urls', 'photo urls', 'photo_urls', 'picture urls', 'imagelist', 'image list', 'image.url', 'image_link', 'additional_image_link', 'photo url'],
+  status: ['status', 'statut', 'disponibilité', 'availability'],
+  detail_url: ['url', 'vdp', 'vdp url', 'vehicle url', 'detail url', 'details url', 'vehicle_url', 'link', 'lien', 'page url', 'website url'],
 };
+// Numbered photo columns/tags: "image[0].url", "Photo1", "image_2"…
+const PHOTO_KEY = /^(image|photo|picture|img)(s)?\d+(url)?$|^(image|photo)\d*url$/;
 const ALIAS_KEYS = Object.fromEntries(Object.entries(ALIASES).map(([field, names]) => [field, names.map(headerKey)]));
 export const CSV_FIELDS = Object.keys(ALIASES);
 
@@ -73,7 +77,7 @@ export function parseCsv(text, delimiter = detectDelimiter(text)) {
   return rows.filter((r) => r.some((c) => c.trim() !== ''));
 }
 
-/** Which column holds which field, and which columns are ignored. */
+/** Which column holds which field, and which columns are ignored. Several photo columns are all kept. */
 export function mapHeaders(headers) {
   const mapping = {};
   const keys = headers.map(headerKey);
@@ -81,9 +85,10 @@ export function mapHeaders(headers) {
     const idx = keys.findIndex((k, i) => aliases.includes(k) && !Object.values(mapping).includes(i));
     if (idx >= 0) mapping[field] = idx;
   }
-  const used = new Set(Object.values(mapping));
+  const photoColumns = keys.map((k, i) => (PHOTO_KEY.test(k) && mapping.photos !== i ? i : -1)).filter((i) => i >= 0);
+  const used = new Set([...Object.values(mapping), ...photoColumns]);
   const ignored = headers.map((h, i) => (used.has(i) ? null : String(h).trim())).filter(Boolean);
-  return { mapping, ignored };
+  return { mapping, ignored, photoColumns };
 }
 
 export const normaliseVin = (vin) =>
@@ -103,9 +108,13 @@ const number = (v) => {
   return Number.isFinite(n) ? n : NaN;
 };
 
+/** Demonstrators: new vehicles used by the dealership (Démo in French). */
+export const isDemoCondition = (value) => /^(demo|demonstrator|demonstrateur|newdemo|demonew)/.test(headerKey(value));
+
 export function normaliseCondition(value) {
   const c = headerKey(value);
   if (!c) return undefined;
+  if (isDemoCondition(value)) return 'new';
   if (c.startsWith('n')) return 'new'; // new, neuf, neuve
   if (c.startsWith('c') || c.includes('cpo') || c.includes('certif')) return 'certified';
   return 'used'; // used, usagé, occasion, pre-owned, demo…
@@ -114,9 +123,9 @@ export function normaliseCondition(value) {
 function normaliseStatus(value) {
   const s = headerKey(value);
   if (!s) return undefined;
-  if (['available', 'instock', 'disponible', 'active', 'forsale'].includes(s)) return 'available';
-  if (['sold', 'vendu', 'vendue', 'delivered', 'livre'].includes(s)) return 'sold';
-  if (['pending', 'onhold', 'hold', 'deposit', 'reserve', 'reservee', 'enattente'].includes(s)) return 'pending';
+  if (['available', 'instock', 'disponible', 'active', 'forsale', 'intransit', 'enroute'].includes(s)) return 'available';
+  if (['sold', 'vendu', 'vendue', 'delivered', 'livre', 'outofstock', 'notavailable', 'unavailable', 'removed'].includes(s)) return 'sold';
+  if (['pending', 'onhold', 'hold', 'deposit', 'reserve', 'reservee', 'enattente', 'availablefororder', 'preorder'].includes(s)) return 'pending';
   return null;
 }
 
@@ -144,7 +153,15 @@ export function normaliseVehicle(input, { partial = false } = {}) {
   }
   const price = number(input.price);
   if (price !== undefined) v.price = price === null ? null : Math.round(price * 100) / 100;
-  if (input.condition !== undefined && String(input.condition).trim() !== '') v.condition = normaliseCondition(input.condition);
+  if (input.condition !== undefined && String(input.condition).trim() !== '') {
+    v.condition = normaliseCondition(input.condition);
+    v.is_demo = isDemoCondition(input.condition) ? 1 : 0;
+  }
+  if (input.is_demo !== undefined) v.is_demo = input.is_demo && input.is_demo !== '0' ? 1 : 0;
+  if (input.detail_url !== undefined) {
+    const url = String(input.detail_url ?? '').trim();
+    v.detail_url = /^https?:\/\/\S+$/i.test(url) ? url.slice(0, 500) : '';
+  }
   if (input.status !== undefined && String(input.status).trim() !== '') v.status = normaliseStatus(input.status);
   if (input.photos !== undefined) v.photos = parsePhotoList(input.photos);
 
@@ -161,24 +178,115 @@ export function normaliseVehicle(input, { partial = false } = {}) {
   return { vehicle: v };
 }
 
-/** Turn CSV text into vehicle rows ready to match against inventory. */
-export function readInventoryCsv(text) {
-  const rows = parseCsv(text);
-  if (rows.length < 2) return { error: 'The file needs a header row and at least one vehicle' };
-  const headers = rows[0];
-  const { mapping, ignored } = mapHeaders(headers);
-  if (mapping.make === undefined || mapping.model === undefined) {
-    return { error: `Couldn't find Make and Model columns. Columns found: ${headers.map((h) => h.trim()).filter(Boolean).join(', ')}` };
+// ---------- XML feeds (Meta automotive catalog, provider exports) ----------
+
+const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+const decodeEntities = (t) =>
+  t.replace(/&(#x[0-9a-f]+|#\d+|\w+);/gi, (m, e) =>
+    e[0] === '#' ? String.fromCodePoint(e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : Number(e.slice(1))) : (ENTITIES[e.toLowerCase()] ?? m),
+  );
+
+/** Small tolerant XML reader: elements, attributes ignored, CDATA kept. Enough for inventory feeds. */
+export function parseXml(text) {
+  const root = { name: '#root', children: [], text: '' };
+  const stack = [root];
+  const re = /<!\[CDATA\[([\s\S]*?)\]\]>|<!--[\s\S]*?-->|<[?!][\s\S]*?>|<(\/?)([\w:.-]+)[^>]*?(\/?)>|([^<]+)/g;
+  let m;
+  while ((m = re.exec(text))) {
+    const top = stack[stack.length - 1];
+    if (m[1] !== undefined) top.text += m[1];
+    else if (m[3]) {
+      if (m[2] === '/') {
+        if (stack.length > 1 && stack.some((n) => n.name === m[3])) while (stack.length > 1 && stack.pop().name !== m[3]);
+      } else {
+        const node = { name: m[3], children: [], text: '' };
+        top.children.push(node);
+        if (m[4] !== '/') stack.push(node);
+      }
+    } else if (m[5] !== undefined) top.text += decodeEntities(m[5]);
   }
-  if (rows.length - 1 > MAX_ROWS) return { error: `That file has ${rows.length - 1} rows; the limit is ${MAX_ROWS}` };
-  const items = rows.slice(1).map((cells, i) => {
+  return root;
+}
+
+const VEHICLE_HINT = new Set(['vin', 'vehicleid', 'make', 'model', 'stocknumber', 'stock']);
+/** The repeated element that holds one vehicle each (<listing>, <vehicle>, <item>…). */
+function findRecords(root) {
+  const counts = new Map();
+  const walk = (n) => {
+    for (const c of n.children) {
+      if (c.children.some((g) => VEHICLE_HINT.has(headerKey(g.name)))) counts.set(c.name, (counts.get(c.name) || []).concat([c]));
+      walk(c);
+    }
+  };
+  walk(root);
+  return [...counts.values()].sort((a, b) => b.length - a.length)[0] || [];
+}
+
+/** Flatten one vehicle element into { key: value | [values] } ("mileage.value", "image.url", "photos.photo"…). */
+function flattenRecord(node) {
+  const out = {};
+  const add = (key, value) => {
+    value = value.trim();
+    if (!value) return;
+    if (out[key] === undefined) out[key] = value;
+    else out[key] = [].concat(out[key], value);
+  };
+  const walk = (n, prefix) => {
+    for (const c of n.children) {
+      const key = prefix ? `${prefix}.${c.name}` : c.name;
+      if (c.children.length) walk(c, key);
+      else add(key, c.text);
+    }
+  };
+  walk(node, '');
+  return out;
+}
+
+function recordsToTable(records) {
+  const headers = [];
+  for (const r of records) for (const k of Object.keys(r)) if (!headers.includes(k)) headers.push(k);
+  // Repeated values (several photos) become one cell separated by "|", which the photo reader splits.
+  const rows = records.map((r) => headers.map((h) => [].concat(r[h] ?? '').join('|')));
+  return { headers, rows };
+}
+
+/** Turn a CSV/TSV/XML export or feed into vehicle rows ready to match against inventory. */
+export function readInventory(text) {
+  text = String(text || '').replace(/^\uFEFF/, '');
+  let headers;
+  let rows;
+  let format;
+  if (/^\s*</.test(text)) {
+    const records = findRecords(parseXml(text)).map(flattenRecord);
+    if (!records.length) return { error: 'No vehicles found in that XML file' };
+    ({ headers, rows } = recordsToTable(records));
+    format = 'xml';
+  } else {
+    const table = parseCsv(text);
+    if (table.length < 2) return { error: 'The file needs a header row and at least one vehicle' };
+    [headers, ...rows] = table;
+    format = 'csv';
+  }
+  const { mapping, ignored, photoColumns } = mapHeaders(headers);
+  if (mapping.make === undefined || mapping.model === undefined) {
+    return { error: `Couldn't find Make and Model columns. Columns found: ${headers.map((h) => String(h).trim()).filter(Boolean).slice(0, 40).join(', ')}` };
+  }
+  if (rows.length > MAX_ROWS) return { error: `That file has ${rows.length} vehicles; the limit is ${MAX_ROWS}` };
+  if (headers.some((h) => headerKey(h) === 'stateofvehicle' || headerKey(h) === 'vehicleid')) format = `meta-${format}`;
+  const items = rows.map((cells, i) => {
     const input = {};
-    for (const [field, idx] of Object.entries(mapping)) input[field] = (cells[idx] ?? '').trim();
+    for (const [field, idx] of Object.entries(mapping)) input[field] = String(cells[idx] ?? '').trim();
+    const extraPhotos = photoColumns.map((i2) => String(cells[i2] ?? '').trim()).filter(Boolean);
+    if (extraPhotos.length) input.photos = [input.photos, ...extraPhotos].filter(Boolean).join('|');
     if (!input.status) delete input.status;
     if (!input.condition) delete input.condition;
-    if (input.photos === '') delete input.photos; // an empty photo cell keeps existing photos
+    if (input.photos === '' || input.photos === undefined) delete input.photos; // an empty photo cell keeps existing photos
+    if (!input.detail_url) delete input.detail_url;
     const { vehicle, error } = normaliseVehicle(input);
-    return { line: i + 2, vehicle, error };
+    return { line: format.endsWith('xml') ? i + 1 : i + 2, vehicle, error };
   });
-  return { items, mapped: Object.keys(mapping), ignored };
+  return { items, mapped: [...Object.keys(mapping), ...(photoColumns.length && !mapping.photos ? ['photos'] : [])], ignored, format };
 }
+
+/** Kept for older callers: CSV text in, vehicle rows out. */
+export const readInventoryCsv = readInventory;

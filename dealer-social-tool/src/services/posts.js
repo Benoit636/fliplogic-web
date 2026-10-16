@@ -1,7 +1,11 @@
 import { PLATFORMS, POST_TYPES, POST_STATUSES } from '../config.js';
 import { all, get, run, updateRow, parseJson, logActivity, nowIso } from '../db.js';
 import { httpError } from './errors.js';
-import { isAutopilot } from './dealership.js';
+import { isAutopilot, getDealership } from './dealership.js';
+import { unverifiedClaims } from '../ai/claims.js';
+import { hasTenant } from '../tenant.js';
+
+const factDealer = () => (hasTenant() ? getDealership() || {} : {});
 import { tenantId } from '../tenant.js';
 
 export function presentPost(row) {
@@ -13,6 +17,7 @@ export function presentPost(row) {
     metrics: parseJson(row.metrics, {}),
     brief: parseJson(row.brief, {}),
     design: parseJson(row.design, {}),
+    publish_check: parseJson(row.publish_check, {}),
   };
   post.warnings = validatePost(post);
   return post;
@@ -33,6 +38,10 @@ export function validatePost(post) {
   if (!post.content.trim()) warnings.push('Post has no text');
   if (text.length > rules.maxChars) warnings.push(`${text.length}/${rules.maxChars} characters — too long for ${rules.label}`);
   if (rules.requiresMedia && !(post.media || []).length) warnings.push(`${rules.label} requires a photo or video`);
+  // Prices, discounts and financing must come from the vehicle data or the offer typed in (approvers see this).
+  if (post.brief?.details && Object.keys(post.brief.details).length) {
+    for (const p of unverifiedClaims(post.content, post.brief.details, factDealer())) warnings.push(`Check the facts: the text ${p}`);
+  }
   if ((post.hashtags || []).length > rules.maxHashtags && rules.maxHashtags >= 0) {
     warnings.push(`${post.hashtags.length} hashtags — ${rules.label} works best with ${rules.maxHashtags} or fewer`);
   }
@@ -178,6 +187,15 @@ const approval = (approver) => ({
   approved_by_name: approver ? approver.name || approver.email : 'Dealer Admin',
   approved_at: nowIso(),
 });
+/** A post about a vehicle that's sold or no longer in the inventory can't be approved, published or posted. */
+export function assertPromotable(post) {
+  if (!post.vehicle_id || post.post_type === 'sold_celebration') return;
+  const v = get('SELECT year, make, model, status, removed_at FROM vehicles WHERE id = ? AND dealership_id = ?', post.vehicle_id, tenantId());
+  if (v && v.status !== 'available') {
+    throw httpError(409, `${[v.year, v.make, v.model].filter(Boolean).join(' ')} is no longer available (${v.removed_at ? 'removed from the inventory' : v.status}), so this post can't go out.`);
+  }
+}
+
 export const isApproved = (post) => !!post.approved_at && ['approved', 'scheduled', 'publishing', 'published'].includes(post.status);
 
 export function submitForApproval(id, actor = 'user') {
@@ -192,6 +210,7 @@ export function submitForApproval(id, actor = 'user') {
 export function approvePost(id, actor = 'user', approver = null) {
   const post = requirePost(id);
   if (LOCKED.includes(post.status)) throw httpError(409, `Post is already ${post.status}`);
+  assertPromotable(post);
   const status = post.scheduled_at ? 'scheduled' : 'approved';
   setStatus(id, status, { error: null, ...approval(approver) });
   logActivity(actor, 'post.approved', `#${id}${approver ? ` by ${approver.name || approver.email}` : ''}${post.scheduled_at ? ` for ${post.scheduled_at}` : ''}`);
@@ -259,6 +278,7 @@ export function markPostedManually(id, { url = '' } = {}, actor = 'user') {
   const post = requirePost(id);
   if (LOCKED.includes(post.status)) throw httpError(409, `Post is already ${post.status}`);
   if (!isApproved(post)) throw httpError(403, 'A Dealer Admin needs to approve this post before it’s posted');
+  assertPromotable(post);
   if (url && !/^https?:\/\//i.test(url)) throw httpError(400, 'Link must start with http(s)://');
   setStatus(id, 'published', { published_at: nowIso(), external_id: null, external_url: url || null, metrics: '{}', error: null });
   logActivity(actor, 'post.posted_manually', `#${id} on ${PLATFORMS[post.platform].label}`);

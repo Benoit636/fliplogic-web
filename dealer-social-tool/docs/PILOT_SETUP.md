@@ -8,14 +8,17 @@ Nobody shares a password: every person opens their own single-use link and choos
 
 | On | Off during the pilot (`PILOT_MODE=1`) |
 | --- | --- |
-| Dealership profile, logo and branding | Facebook, Instagram, LinkedIn and other connections |
+| Dealership profile, logo and branding | Instagram, LinkedIn and other connections |
 | Dealer Admin and Dealer Staff logins | Inbox (comments, messages, reviews: customers' personal information) and CRM lead forwarding |
-| Inventory: CSV import, search, vehicle → post | AI chat assistant, autopilot rules |
+| Inventory: hourly feed sync or CSV import, website check, vehicle → post | AI chat assistant, autopilot rules |
 | Posts with branded PNG images, English / French / both | Billing and trials (pilot dealerships are complimentary) |
-| Manager approval, then a ready-to-post kit (posted by hand) | Analytics (nothing is read back from social networks) |
+| Manager approval, then a ready-to-post kit, or publishing to one Facebook Page once the platform owner unlocks it | Analytics |
+
+Facebook: see [`INVENTORY_AND_FACEBOOK.md`](INVENTORY_AND_FACEBOOK.md). A connected Page stays locked until the platform
+owner unlocks it (a test Page first; the live Page only with the dealership's explicit approval).
 
 The "off" features are switched off on the **server**, not just hidden. No customer personal information is collected:
-inventory imports keep only vehicle columns, and nothing is read from social networks.
+inventory imports keep only vehicle columns, and the only thing read from Facebook is the dealership's own published post, to check it.
 
 ## Roles
 
@@ -104,6 +107,10 @@ Without email set up, a Dealer Admin removes the person and invites them again.
 
 ## 5. Load the inventory (Dealer Admin)
 
+Best: an automatic feed from the website provider, synced every hour. See
+[`INVENTORY_AND_FACEBOOK.md`](INVENTORY_AND_FACEBOOK.md) (includes the email to send D2C Media). Until then, use CSV:
+
+
 1. Export the vehicle inventory from your DMS or website provider as **CSV** (in Excel: *File → Save As → CSV*).
    English and French column names both work, and so do Excel's semicolon-separated files.
 2. **Inventory → Import CSV**, choose the file. You see a **preview** first (new / updated / no change / skipped,
@@ -118,7 +125,7 @@ Without email set up, a Dealer Admin removes the person and invites them again.
 
 ## 6. The daily routine: create, approve, post
 
-Nothing is posted until a **Dealer Admin approves it**. Social accounts aren't connected during the pilot, so approved
+Nothing is posted until a **Dealer Admin approves it**. Until a Facebook Page is connected and unlocked, approved
 posts are posted by hand with a ready-to-post kit.
 
 **Dealer Staff (about 1–2 minutes, on a phone):**

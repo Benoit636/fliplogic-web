@@ -61,6 +61,7 @@ export function connectOptions(state, indexes) {
   for (const i of indexes) {
     const o = options[Number(i)];
     if (!o) continue;
+    if (config.pilotMode && o.platform !== 'facebook') continue; // pilot: Facebook Pages only
     const existing = get('SELECT id FROM accounts WHERE dealership_id = ? AND platform = ? AND external_id = ?', tenantId(), o.platform, o.external_id);
     if (existing) {
       saveTokens(existing.id, o);

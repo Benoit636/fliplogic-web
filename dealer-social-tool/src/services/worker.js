@@ -18,7 +18,12 @@ let running = false;
 let ticks = 0;
 let lastBackupDay = '';
 
-const FEED_INTERVAL_MS = 6 * 3600_000;
+// Inventory feeds sync every `inventory_sync_minutes` (60 by default); after failures the wait doubles (up to 8×).
+const feedDue = (d) => {
+  if (!d.feed_last_synced_at) return true;
+  const minutes = Math.max(15, d.inventory_sync_minutes || 60) * Math.min(8, 2 ** (d.feed_failures || 0));
+  return Date.now() - new Date(d.feed_last_synced_at).getTime() >= minutes * 60_000;
+};
 
 function activeDealership(id) {
   const d = getDealershipById(id);
@@ -80,8 +85,8 @@ export async function tick() {
       });
       await forEachDealership(allDealershipIds(), 'feed', async (d) => {
         if (!d.inventory_feed_url || !entitlements(d).features.inventoryFeed) return;
-        if (d.feed_last_synced_at && Date.now() - new Date(d.feed_last_synced_at).getTime() < FEED_INTERVAL_MS) return;
-        await syncInventoryFeed(d);
+        if (!feedDue(d)) return;
+        await syncInventoryFeed(d, { trigger: 'schedule' });
       });
     }
     if (ticks % 120 === 0) {

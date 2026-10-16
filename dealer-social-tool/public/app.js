@@ -846,15 +846,71 @@ function vehicleCard(v, { admin }) {
       <div class="veh-title">${esc([v.year, v.make, v.model].filter(Boolean).join(' '))} <span class="muted">${esc(v.trim)}</span></div>
       <div class="small muted">${esc(meta.join(' · '))}</div>
       <div class="row" style="gap:6px;margin-top:4px">
-        <span class="badge ${v.condition === 'new' ? 'info' : ''}">${CONDITION_LABELS[v.condition] || esc(v.condition)}</span>
+        <span class="badge ${v.condition === 'new' ? 'info' : ''}">${v.is_demo ? 'Demo' : CONDITION_LABELS[v.condition] || esc(v.condition)}</span>
+        ${v.removed_at ? '<span class="badge bad">Removed from feed</span>' : ''}
         <span class="badge ${v.status === 'available' ? 'good' : v.status === 'sold' ? '' : 'warn'}">${STATUS_LABELS[v.status] || esc(v.status)}</span>
         ${v.photos.length ? `<span class="badge">📷 ${v.photos.length}</span>` : '<span class="badge warn">No photo</span>'}
         ${v.last_posted_at ? `<span class="small muted">posted ${ago(v.last_posted_at)}</span>` : '<span class="small muted">never posted</span>'}
       </div>
     </div>
     <div class="veh-price">${money(v.price)}${v.previous_price > v.price ? `<div class="small" style="color:var(--good)">↓ from ${money(v.previous_price)}</div>` : ''}</div>
-    <div class="veh-actions"><a class="btn small primary" href="${createHref}">✨ Create post</a>${admin ? `<button class="small" data-vedit="${v.id}">Edit</button><button class="small danger" data-vdel="${v.id}" aria-label="Delete">✕</button>` : ''}</div>
+    <div class="veh-actions">${v.status === 'available' || v.status === 'sold' ? `<a class="btn small primary" href="${createHref}">✨ Create post</a>` : ''}${v.detail_url ? `<a class="btn small" href="${esc(v.detail_url)}" target="_blank" rel="noopener">Website ↗</a>` : ''}${admin ? `<button class="small" data-vedit="${v.id}">Edit</button><button class="small danger" data-vdel="${v.id}" aria-label="Delete">✕</button>` : ''}</div>
   </div>`;
+}
+
+/** Inventory feed status, "Sync now" and the website check (Dealer Admin). */
+async function drawFeedPanel(reload) {
+  const box = $('#inv-feed');
+  if (!box) return;
+  const [st, val] = await Promise.all([api('GET', '/inventory/syncs'), api('GET', '/inventory/validation')]);
+  const last = st.syncs[0];
+  const report = val.report;
+  box.innerHTML = `<div class="card-head" style="margin-bottom:6px"><h3>Inventory feed</h3>
+      <div class="actions">${st.feed_configured ? '<button class="small" id="feed-sync">↻ Sync now</button>' : ''}<button class="small" id="feed-check" ${val.running ? 'disabled' : ''}>${val.running ? 'Checking the website…' : '✓ Check 10 vehicles against the website'}</button></div></div>
+    ${
+      st.feed_configured
+        ? `<div class="small">${last ? `${last.ok ? '✅' : '⚠️'} Last sync ${ago(last.started_at)}: ${esc(last.message)}` : 'Not synced yet.'} <span class="muted">· from ${esc(st.feed)} every ${st.every_minutes} min</span></div>
+           ${st.last_error ? `<div class="small" style="color:var(--bad)">${esc(st.last_error)}${st.failures > 1 ? ` (${st.failures} times in a row)` : ''}</div>` : ''}`
+        : '<div class="small muted">No automatic feed yet. Add the feed address from your website provider in <a href="#/settings">Accounts &amp; Settings</a>, or use Import CSV.</div>'
+    }
+    ${report ? `<div class="small" style="margin-top:8px">Website check ${ago(report.checked_at)}: <strong>${report.passed} passed</strong>, <strong style="color:${report.failed ? 'var(--bad)' : 'inherit'}">${report.failed} failed</strong>, ${report.not_checked} not checked · <a href="#" id="feed-report">See report</a></div>` : ''}`;
+  if ($('#feed-sync')) $('#feed-sync').onclick = (e) => act(e.target, () => api('POST', '/vehicles/sync-feed'), (r) => `Synced: ${r.summary}`).then(() => (reload(), drawFeedPanel(reload)));
+  $('#feed-check').onclick = async (e) => {
+    if (!confirm('Compare up to 10 vehicles with their pages on your website? It reads one page every 10 seconds (about 2 minutes).')) return;
+    await act(e.target, () => api('POST', '/inventory/validate', { limit: 10 }), 'Checking… the report will appear here');
+    const poll = setInterval(async () => {
+      if (!$('#inv-feed')) return clearInterval(poll);
+      const v = await api('GET', '/inventory/validation').catch(() => null);
+      if (v && !v.running) {
+        clearInterval(poll);
+        drawFeedPanel(reload);
+        if (v.report) showValidationReport(v.report);
+      }
+    }, 5000);
+    drawFeedPanel(reload);
+  };
+  if ($('#feed-report')) $('#feed-report').onclick = (e) => (e.preventDefault(), showValidationReport(report));
+}
+
+function showValidationReport(r) {
+  const FIELD = { vin: 'VIN', stock_number: 'Stock #', trim: 'Trim', price: 'Price', mileage: 'Km', photos: 'Photos', availability: 'Availability' };
+  const ICON = { pass: '✓', fail: '✗', missing: '…', not_shown: '–' };
+  const COLOR = { pass: 'var(--good)', fail: 'var(--bad)', missing: 'var(--warn)', not_shown: 'var(--muted)' };
+  openModal(
+    'Website check',
+    `<div class="stack">
+      <div class="import-stats"><div><strong>${r.passed}</strong><span>passed</span></div><div><strong>${r.failed}</strong><span>failed</span></div><div><strong>${r.not_checked}</strong><span>not checked</span></div></div>
+      <p class="small muted" style="margin:0">Compared with ${esc(r.website)} on ${new Date(r.checked_at).toLocaleString()}. ✓ matches · ✗ differs · … missing in our data · – not shown on the website.</p>
+      <div class="table-wrap import-rows"><table><tr><th>Vehicle</th>${Object.values(FIELD).map((f) => `<th>${f}</th>`).join('')}<th>Result</th></tr>
+      ${r.results
+        .map(
+          (x) => `<tr><td>${esc(x.title)}<div class="small muted">${esc(x.stock_number || '')} ${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">page ↗</a>` : ''}</div>${x.reason ? `<div class="small muted">${esc(x.reason)}</div>` : ''}</td>
+          ${Object.keys(FIELD).map((f) => { const c = x.checks[f]; return `<td title="${esc(c?.detail || '')}" style="color:${COLOR[c?.status] || 'inherit'};text-align:center">${c ? ICON[c.status] : ''}${c?.detail && c.status === 'fail' ? `<div class="small">${esc(c.detail)}</div>` : ''}</td>`; }).join('')}
+          <td><span class="badge ${x.result === 'pass' ? 'good' : x.result === 'fail' ? 'bad' : ''}">${x.result === 'pass' ? 'Pass' : x.result === 'fail' ? 'Fail' : 'Not checked'}</span></td></tr>`,
+        )
+        .join('')}</table></div></div>`,
+    { wide: true },
+  );
 }
 
 views.inventory = async () => {
@@ -873,6 +929,7 @@ views.inventory = async () => {
         <span class="spacer"></span><span class="small muted" id="inv-count"></span>
       </div>
     </div>
+    ${admin ? '<div class="card" id="inv-feed"></div>' : ''}
     <div id="inv-list" class="veh-list"></div>
   </div>`;
   let vehicles = [];
@@ -914,6 +971,7 @@ views.inventory = async () => {
     filters.status = e.target.value;
     load();
   };
+  if (admin) drawFeedPanel(load);
   if (admin) {
     $('#inv-add').onclick = () => openVehicleEditor(null, load);
     $('#inv-import').onclick = () => openImport(load);
@@ -1141,7 +1199,9 @@ views.settings = async () => {
         ${field('compliance_notes_fr', 'Legal line, French', 'textarea', 'Taxes et frais en sus.')}
         <label class="field"><span>Odometer unit</span><select name="distance_unit"><option value="km" ${d.distance_unit === 'km' ? 'selected' : ''}>Kilometres</option><option value="mi" ${d.distance_unit === 'mi' ? 'selected' : ''}>Miles</option></select></label>
         <label class="field"><span>Time zone (autopilot schedules use it)</span><select name="timezone">${timezones(d.timezone)}</select></label>
-        <label class="field full"><span>Inventory feed URL (CSV from your DMS or website provider — synced every 6 hours, Pro plan)</span><input name="inventory_feed_url" value="${esc(d.inventory_feed_url)}" placeholder="https://…/inventory.csv"></label>
+        <label class="field full"><span>Inventory feed address (from your website provider: Facebook vehicle catalog feed, or an XML/CSV export)</span><input name="inventory_feed_url" value="" autocomplete="off" placeholder="${d.inventory_feed_configured ? `Saved: ${esc(d.inventory_feed_url)} — paste a new address to replace it` : 'https://…/inventory.xml'}"></label>
+        <label class="field"><span>Check the feed every (minutes)</span><input name="inventory_sync_minutes" type="number" min="15" max="1440" step="5" value="${esc(d.inventory_sync_minutes || 60)}"></label>
+        ${d.inventory_feed_configured ? '<label class="check" style="border-radius:8px;align-self:end"><input type="checkbox" name="remove_inventory_feed" value="1"> Remove the saved feed</label>' : '<div></div>'}
         <label class="check full" style="border-radius:8px"><input type="checkbox" name="feed_marks_sold" value="1" ${d.feed_marks_sold ? 'checked' : ''}> Mark vehicles as sold when they disappear from the feed (creates “sold” celebration posts)</label>
         ${state.meta.pilot_mode ? '' : `<label class="field full"><span>CRM lead email (leads from comments, DMs and reviews are forwarded in ADF/XML — the format your CRM already accepts)</span><input name="crm_lead_email" type="email" value="${esc(d.crm_lead_email || '')}" placeholder="leads@yourstore.crm-provider.com"></label>`}
         ${d.feed_last_synced_at ? `<div class="full small muted">Last feed sync ${ago(d.feed_last_synced_at)}: ${esc(d.feed_last_result)}</div>` : ''}
@@ -1149,7 +1209,7 @@ views.settings = async () => {
       </div></fieldset></form>
     ${
       state.meta.pilot_mode
-        ? `<div class="card"><div class="card-head"><h2>Social accounts</h2><span class="badge">Pilot</span></div><p class="small muted" style="margin:0">Facebook, Instagram and LinkedIn are not connected during the pilot. Every post is approved here by a Dealer Admin, then posted by hand from <strong>My Posts → Ready to post</strong> (copy the caption, save the image, tap “I posted it”).</p></div>`
+        ? facebookPilotCard(accounts.filter((a) => a.platform === 'facebook' && a.mode === 'live'))
         : `<div class="card"><div class="card-head"><h2>Connected accounts</h2><div class="actions"><button class="small" id="acct-add">Advanced: add manually</button></div></div>
       <div class="row" style="margin-bottom:10px">${Object.entries(state.meta.oauth)
         .map(
@@ -1171,6 +1231,9 @@ views.settings = async () => {
     e.preventDefault();
     const body = Object.fromEntries(new FormData(e.target));
     body.feed_marks_sold = !!body.feed_marks_sold;
+    body.remove_inventory_feed = !!body.remove_inventory_feed;
+    if (!body.inventory_feed_url) delete body.inventory_feed_url; // empty keeps the saved feed
+    if (body.inventory_sync_minutes) body.inventory_sync_minutes = Number(body.inventory_sync_minutes);
     // Colour pickers always hold a value; only save the ones that were set or changed.
     for (const k of ['brand_color', 'accent_color']) if (!d[k] && body[k] === '#0071e3') delete body[k];
     act(e.submitter, () => api('PUT', '/dealership', body), 'Profile saved').then((r) => r && loadShell().then(route));
@@ -1385,7 +1448,8 @@ function freshWizard() {
 
 const isManager = () => isAdmin();
 const objectiveDef = () => (state.meta.objectives[wiz.condition] || []).find((o) => o.key === wiz.objective);
-const liveAccounts = (accounts) => accounts.filter((a) => a.enabled && a.mode === 'live');
+// Connected and unlocked by the platform owner (every real Page starts locked).
+const liveAccounts = (accounts) => accounts.filter((a) => a.enabled && a.mode === 'live' && a.publish_allowed);
 const composeClient = (p) => {
   const tags = (p.hashtags || []).filter((t) => !p.content.toLowerCase().includes(t.toLowerCase()));
   return tags.length ? `${p.content.trim()}\n\n${tags.join(' ')}` : p.content.trim();
@@ -1560,6 +1624,31 @@ async function renderCondition() {
     const ed = e.target.closest('[data-edit]');
     if (ed) openPostEditor(Number(ed.dataset.edit), () => route());
   };
+}
+
+/** Pilot: one Facebook Page card. Pages stay locked until the platform owner unlocks them (test Page first). */
+function facebookPilotCard(pages) {
+  const fb = state.meta.oauth?.meta;
+  const status = (a) =>
+    !a.publish_allowed
+      ? '<span class="badge warn">🔒 Locked — waiting for the platform owner</span>'
+      : a.is_test
+      ? '<span class="badge info">Test Page — publishing on</span>'
+      : '<span class="badge good">Live Page — publishing on</span>';
+  return `<div class="card"><div class="card-head"><h2>Facebook Page</h2><span class="badge">Pilot</span></div>
+    ${
+      pages.length
+        ? pages.map((a) => `<div class="list-item"><div>${pIcon('facebook')}</div><div class="grow"><strong>${esc(a.display_name)}</strong><div class="small">${status(a)}</div>${a.last_error ? `<div class="small" style="color:var(--bad)">⚠️ ${esc(a.last_error)}</div>` : ''}</div>${isAdmin() ? `<button class="small danger" data-adel="${a.id}">Disconnect</button>` : ''}</div>`).join('')
+        : '<p class="small muted" style="margin-top:0">No Facebook Page connected. Until one is, approved posts are posted by hand from <strong>My Posts → Ready to post</strong>.</p>'
+    }
+    ${
+      isAdmin()
+        ? fb?.configured
+          ? `<div class="row"><button class="small primary" data-oauth="meta">🔗 Connect Facebook Page</button></div>`
+          : '<p class="small muted">Facebook connection isn’t set up on this server yet (the platform owner adds the Meta app keys).</p>'
+        : ''
+    }
+    <p class="small muted" style="margin-bottom:0">A newly connected Page is locked: nothing is published until the platform owner unlocks it, a test Page first. Every post is still previewed and approved by a Dealer Admin.</p></div>`;
 }
 
 function vehicleChip(v, changeable = false) {
@@ -2076,12 +2165,20 @@ async function openPostKit(id, onChange = () => {}) {
   el.addEventListener('click', (e) => e.target.closest('[data-posted]') && setTimeout(onChange, 500));
 }
 
+/** What the network confirmed after publishing (photo, text, price, inventory link). */
+function publishCheckLine(post) {
+  const c = post.publish_check;
+  if (!c || !c.checked_at) return '';
+  const item = (ok, label) => (ok === null || ok === undefined ? '' : `${ok ? '✓' : '✗'} ${label}`);
+  return `<div class="small ${c.ok ? 'muted' : ''}" style="${c.ok ? '' : 'color:var(--bad)'}">${esc(platformLabel(post.platform))} shows: ${[item(c.photo, 'photo'), item(c.caption, 'text'), item(c.price, 'price'), item(c.link, 'vehicle link')].filter(Boolean).join(' · ')}</div>`;
+}
+
 function renderDone() {
   const r = wiz.results || [];
   const line = ({ post, outcome }) => {
     const label = `${pIcon(post.platform)} ${esc(platformLabel(post.platform))}`;
     if (outcome === 'published')
-      return `<li>✅ Posted to ${label}${post.external_url ? ` · <a href="${esc(post.external_url)}" target="_blank" rel="noopener">View post ↗</a>` : ''}</li>`;
+      return `<li>✅ Posted to ${label}${post.external_url ? ` · <a href="${esc(post.external_url)}" target="_blank" rel="noopener">View post ↗</a>` : ''}${publishCheckLine(post)}</li>`;
     if (outcome === 'failed')
       return `<li>⚠️ ${label} didn’t go through: ${esc(post.error || 'unknown error')} <button class="small" data-edit="${post.id}">Fix &amp; retry</button></li>`;
     if (outcome === 'scheduled') return `<li>🕒 ${label} approved and scheduled for ${fmtDate(post.scheduled_at)}</li>`;

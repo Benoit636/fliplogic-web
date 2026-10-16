@@ -149,3 +149,23 @@ test('Create Post objectives send the objective guidance and only the typed fact
   assert.match(prompt, /compliance note/);
   assert.doesNotMatch(prompt, /Mileage|Stock #/, 'empty fields are left out');
 });
+
+test('fact guard: AI copy that invents a price, discount or financing is replaced by copy written from the facts', async () => {
+  mods.helpers.setupDb();
+  copyVariants = [
+    { platform: 'facebook', title: 'T', content: 'Price drop on the Golf! Now $27,995 with 0.99% financing and $500 cash back.', hashtags: [], image_idea: '' },
+    { platform: 'linkedin', title: 'T', content: 'Price drop on our 2022 Golf: was $31,900, now $29,995. You save $1,905.', hashtags: [], image_idea: '' },
+  ];
+  const r = await mods.generator.generatePostVariants({
+    postType: 'used_price_drop',
+    details: { year: '2022', make: 'Volkswagen', model: 'Golf', price: '29995', previous_price: '31900' },
+    platforms: ['facebook', 'linkedin'],
+  });
+  const fb = r.variants.find((v) => v.platform === 'facebook');
+  const li = r.variants.find((v) => v.platform === 'linkedin');
+  assert.doesNotMatch(fb.content, /27,995|0\.99%|cash back/, 'invented offer thrown away');
+  assert.match(fb.content, /\$29,995/, 'replaced by template copy from the facts');
+  assert.equal(li.content, 'Price drop on our 2022 Golf: was $31,900, now $29,995. You save $1,905.', 'accurate AI copy is kept');
+  assert.equal(r.fact_check.length, 1);
+  assert.match(r.fact_check[0].problems.join(' '), /\$27,995/);
+});

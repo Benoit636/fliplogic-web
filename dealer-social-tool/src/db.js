@@ -311,6 +311,50 @@ const MIGRATIONS = [
   ALTER TABLE sessions ADD COLUMN last_seen_at TEXT;
   UPDATE sessions SET last_seen_at = created_at;
   `,
+  // 8: inventory integration (feeds, demos, detail pages, sync history, website validation) and Facebook page locks
+  `
+  ALTER TABLE vehicles ADD COLUMN detail_url TEXT NOT NULL DEFAULT '';
+  ALTER TABLE vehicles ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE vehicles ADD COLUMN source TEXT NOT NULL DEFAULT 'manual';
+  ALTER TABLE vehicles ADD COLUMN last_seen_at TEXT;
+  ALTER TABLE vehicles ADD COLUMN removed_at TEXT;
+  ALTER TABLE dealerships ADD COLUMN inventory_sync_minutes INTEGER NOT NULL DEFAULT 60;
+  ALTER TABLE dealerships ADD COLUMN feed_last_error TEXT NOT NULL DEFAULT '';
+  ALTER TABLE dealerships ADD COLUMN feed_failures INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE inventory_syncs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dealership_id INTEGER NOT NULL REFERENCES dealerships(id) ON DELETE CASCADE,
+    started_at TEXT NOT NULL DEFAULT ${NOW},
+    finished_at TEXT,
+    ok INTEGER NOT NULL DEFAULT 0,
+    trigger TEXT NOT NULL DEFAULT 'schedule',
+    format TEXT NOT NULL DEFAULT '',
+    total INTEGER NOT NULL DEFAULT 0,
+    created INTEGER NOT NULL DEFAULT 0,
+    updated INTEGER NOT NULL DEFAULT 0,
+    unchanged INTEGER NOT NULL DEFAULT 0,
+    removed INTEGER NOT NULL DEFAULT 0,
+    skipped INTEGER NOT NULL DEFAULT 0,
+    message TEXT NOT NULL DEFAULT ''
+  );
+  CREATE INDEX idx_inventory_syncs ON inventory_syncs(dealership_id, id);
+  CREATE TABLE inventory_validations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dealership_id INTEGER NOT NULL REFERENCES dealerships(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT ${NOW},
+    created_by TEXT NOT NULL DEFAULT '',
+    passed INTEGER NOT NULL DEFAULT 0,
+    failed INTEGER NOT NULL DEFAULT 0,
+    report TEXT NOT NULL DEFAULT '{}'
+  );
+  ALTER TABLE accounts ADD COLUMN is_test INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE accounts ADD COLUMN publish_allowed INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE accounts ADD COLUMN unlocked_by TEXT;
+  ALTER TABLE accounts ADD COLUMN unlocked_at TEXT;
+  -- Practice accounts never post anywhere; real pages stay locked until the platform owner unlocks each one.
+  UPDATE accounts SET publish_allowed = 1 WHERE mode = 'simulated';
+  ALTER TABLE posts ADD COLUMN publish_check TEXT NOT NULL DEFAULT '{}';
+  `,
 ];
 export { MIGRATIONS };
 

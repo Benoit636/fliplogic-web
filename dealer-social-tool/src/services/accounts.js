@@ -75,7 +75,14 @@ export function updateAccount(id, fields) {
     throw httpError(400, 'Live accounts need the page/account ID and an access token');
   }
   if (patch.access_token) patch.access_token = encrypt(patch.access_token);
-  updateRow('accounts', id, patch, ['display_name', 'mode', 'external_id', 'access_token', 'enabled']);
+  // Pointing an unlocked account at another page (or switching it to live) locks it again:
+  // the platform owner must check the new page before anything is published to it.
+  const retargeted = (patch.mode !== undefined && patch.mode !== existing.mode) || (patch.external_id !== undefined && patch.external_id !== existing.external_id) || !!patch.access_token;
+  if (retargeted && existing.publish_allowed && merged.mode === 'live') {
+    patch.publish_allowed = 0;
+    logActivity('user', 'account.locked', `${existing.display_name}: page details changed, locked until the platform owner unlocks it again`);
+  }
+  updateRow('accounts', id, patch, ['display_name', 'mode', 'external_id', 'access_token', 'enabled', 'publish_allowed']);
   return present(get('SELECT * FROM accounts WHERE id = ?', id));
 }
 

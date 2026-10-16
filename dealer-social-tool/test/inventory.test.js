@@ -131,21 +131,36 @@ test('a VIN and stock # that point at two different vehicles is refused, not mer
   assert.match(r2.errors[0].error, /Stock #B1 is already used by .*VIN 1FTFW1E50NFA00011/);
 });
 
-test('preview (dry run) saves nothing; "mark missing as sold" only touches vehicles not in the file', () => {
-  const before = listVehicles({ status: 'all' }).length;
+test('preview (dry run) saves nothing; "mark missing as sold" only removes imported vehicles that left the file', () => {
+  const before = listVehicles({ status: 'all' }).length; // 2 vehicles added by hand in the fixtures
   const preview = importVehiclesCsv(DMS, { dryRun: true });
   assert.equal(preview.created, 3);
   assert.equal(listVehicles({ status: 'all' }).length, before, 'nothing saved');
   importVehiclesCsv(DMS);
-  const withSold = importVehiclesCsv(DMS, { dryRun: true, markMissingSold: true });
-  assert.equal(withSold.marked_sold, before, 'the two older vehicles would be marked sold');
+  const withoutJetta = DMS.split('\n').filter((l) => !l.startsWith('U200')).join('\n') + '\nN500,3VWC57BU5RM000005,2024,Volkswagen,Taos,Trendline,5,32995,New,Blue,,,';
+  const dry = importVehiclesCsv(withoutJetta, { dryRun: true, markMissingSold: true });
+  assert.equal(dry.marked_sold, 1, 'only the Jetta left the file; vehicles added by hand are never removed');
   assert.equal(listVehicles({ status: 'sold' }).length, 0);
-  importVehiclesCsv(DMS, { markMissingSold: true });
-  assert.equal(listVehicles({ status: 'sold' }).length, before);
-  assert.equal(listVehicles({ status: 'available' }).length, 3);
+  importVehiclesCsv(withoutJetta, { markMissingSold: true });
+  const jetta = listVehicles({ q: 'U200', status: 'all' })[0];
+  assert.equal(jetta.status, 'sold');
+  assert.ok(jetta.removed_at);
+  assert.equal(listVehicles({ status: 'available' }).length, before + 3);
+  // It comes back if it reappears in the file.
+  const back = importVehiclesCsv(DMS + '\nN500,3VWC57BU5RM000005,2024,Volkswagen,Taos,Trendline,5,32995,New,Blue,,,', { markMissingSold: true });
+  assert.equal(back.restored, 1);
+  assert.equal(listVehicles({ q: 'U200' })[0].status, 'available');
   const tiny = importVehiclesCsv('Stock,Make,Model\nZ1,Kia,Soul', { markMissingSold: true, dryRun: true });
   assert.equal(tiny.marked_sold, 0);
   assert.match(tiny.warning, /fewer than 3/);
+});
+
+test('an incomplete feed never wipes out the lot', () => {
+  const rows = Array.from({ length: 12 }, (_, i) => `S${i},Volkswagen,Jetta,${30000 + i}`);
+  importVehiclesCsv(['Stock,Make,Model,Price', ...rows].join('\n'));
+  const partial = importVehiclesCsv(['Stock,Make,Model,Price', ...rows.slice(0, 3)].join('\n'), { markMissingSold: true });
+  assert.equal(partial.marked_sold, 0);
+  assert.match(partial.warning, /9 of 12 vehicles are missing/);
 });
 
 test('adding or editing a vehicle by hand cannot duplicate a VIN or stock #', (a) => {
@@ -169,6 +184,8 @@ test('search: every word must match, across stock #, VIN, year, make, model and 
   assert.deepEqual(listVehicles({ q: 'volkswagen', condition: 'new' }).map((v) => v.stock_number), ['V100']);
   assert.ok(listVehicles({ condition: 'used' }).every((v) => v.condition !== 'new'));
   assert.equal(listVehicles({ q: '%' }).length, listVehicles().length, 'wildcards are literal');
+  importVehiclesCsv('Stock,Make,Model\nNOYEAR1,Kia,Soul');
+  assert.equal(listVehicles({ q: 'NOYEAR1' }).length, 1, 'vehicles without a year are found too');
 });
 
 test('shared CSV helpers', () => {

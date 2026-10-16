@@ -4,6 +4,25 @@ import { tenantId } from '../tenant.js';
 import { isValidTimeZone } from '../time.js';
 import { PLAN_KEYS, TRIAL_PLAN, entitlements } from '../plans.js';
 import { httpError } from './errors.js';
+import { encrypt, decrypt } from '../crypto.js';
+
+/** Feed address shown in the app: just the website it comes from. */
+export function maskFeedUrl(stored) {
+  const url = decrypt(stored);
+  if (!url) return '';
+  try {
+    return `${new URL(url).origin}/…`;
+  } catch {
+    return 'saved';
+  }
+}
+
+/** Dealership as sent to the browser: no billing ids, no feed secret. */
+export function presentDealership(d) {
+  if (!d) return d;
+  const { stripe_customer_id, stripe_subscription_id, inventory_feed_url, ...rest } = d;
+  return { ...rest, inventory_feed_url: maskFeedUrl(inventory_feed_url), inventory_feed_configured: !!inventory_feed_url };
+}
 
 const EDITABLE = [
   'name',
@@ -23,6 +42,7 @@ const EDITABLE = [
   'inventory_feed_url',
   'feed_marks_sold',
   'crm_lead_email',
+  'inventory_sync_minutes',
   'province',
   'postal_code',
   'brand_color',
@@ -99,6 +119,13 @@ export function updateDealership(fields) {
   }
   const patch = { ...fields };
   if (patch.feed_marks_sold !== undefined) patch.feed_marks_sold = patch.feed_marks_sold ? 1 : 0;
+  if (patch.inventory_sync_minutes !== undefined) {
+    const m = Number(patch.inventory_sync_minutes);
+    if (!Number.isInteger(m) || m < 15 || m > 1440) throw httpError(400, 'Sync every 15 to 1440 minutes');
+    patch.inventory_sync_minutes = m;
+  }
+  // The feed address can contain a private key: stored encrypted, never sent back to the browser in full.
+  if (patch.inventory_feed_url !== undefined) patch.inventory_feed_url = patch.inventory_feed_url ? encrypt(String(patch.inventory_feed_url).trim()) : '';
   for (const key of EDITABLE) if (typeof patch[key] === 'string') patch[key] = patch[key].trim().slice(0, 2000);
   updateRow('dealerships', tenantId(), patch, EDITABLE, { tenant: false });
   return getDealership();

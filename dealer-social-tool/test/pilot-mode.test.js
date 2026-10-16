@@ -63,7 +63,8 @@ test('pilot mode: complimentary dealership, pilot features on, everything else o
 
   // Off: social connections, inbox (customer personal information), AI chat, autopilot changes, billing.
   for (const [method, p, body] of [
-    ['POST', '/api/oauth/meta/start'],
+    ['POST', '/api/oauth/google/start'],
+    ['POST', '/api/oauth/linkedin/start'],
     ['POST', '/api/accounts', { platform: 'facebook', display_name: 'VW', mode: 'live' }],
     ['GET', '/api/inbox'],
     ['POST', '/api/inbox', { platform: 'facebook', author: 'Jane Customer', text: 'Is it available?' }],
@@ -76,9 +77,12 @@ test('pilot mode: complimentary dealership, pilot features on, everything else o
     assert.equal(r.status, 403, `${method} ${p} is off`);
     assert.match(r.data.error, /switched off during the pilot/);
   }
+  // Facebook is the one network that can be connected during the pilot (not set up on this test server).
+  assert.match((await admin('POST', '/api/oauth/meta/start')).data.error, /not configured/);
   assert.equal((await fetch(`${base}/webhooks/meta`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"object":"page","entry":[]}' })).status, 403);
   const cb = await admin('GET', '/oauth/meta/callback?code=x&state=y');
-  assert.match(cb.location, /not%20connected%20during%20the%20pilot/);
+  assert.doesNotMatch(cb.location, /Only%20Facebook/, 'Facebook callback is allowed');
+  assert.match((await admin('GET', '/oauth/google/callback?code=x&state=y')).location, /Only%20Facebook%20can%20be%20connected/);
 });
 
 test('configuration check stops an unsafe production start', async () => {

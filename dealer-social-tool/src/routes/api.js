@@ -2,16 +2,18 @@ import crypto from 'node:crypto';
 import express from 'express';
 import { PLATFORMS, POST_TYPES, POST_STATUSES, GENERAL_POST_TYPES, config } from '../config.js';
 import { OBJECTIVES, FIELDS, IMAGE_LABELS, LANGUAGES } from '../shared/objectives.js';
-import { all } from '../db.js';
-import { tenantId } from '../tenant.js';
+import { all, logActivity } from '../db.js';
+import { tenantId, runWithTenant } from '../tenant.js';
+import { validateInventory, latestValidation } from '../services/validation.js';
 import { PLANS } from '../plans.js';
 import { aiEnabled } from '../ai/client.js';
 import { chat, conversationTranscript } from '../ai/agent.js';
 import { rewritePost } from '../ai/generator.js';
 import { liveSupported } from '../platforms/index.js';
-import { getDealership, updateDealership, setDealershipLogo } from '../services/dealership.js';
+import { getDealership, updateDealership, setDealershipLogo, presentDealership } from '../services/dealership.js';
 import { listAccounts, createAccount, updateAccount, deleteAccount } from '../services/accounts.js';
-import { listVehicles, getVehicle, createVehicle, updateVehicle, deleteVehicle, importVehiclesCsv, syncInventoryFeed } from '../services/inventory.js';
+import { listVehicles, getVehicle, createVehicle, updateVehicle, deleteVehicle, importVehiclesCsv, syncInventoryFeed, listInventorySyncs } from '../services/inventory.js';
+import { maskFeedUrl } from '../services/dealership.js';
 import {
   listPosts,
   getPost,
@@ -61,8 +63,10 @@ const admin = (req, res, next) => {
 
 // --- pilot mode: features outside the pilot are switched off on the server, not just hidden ---
 const PILOT_OFF = [
-  { re: /^\/(inbox|oauth|chat)(\/|$)/, methods: 'all' }, // customer messages & personal information; social connections; AI chat
-  { re: /^\/(accounts|autopilot)(\/|$)/, methods: 'write' },
+  { re: /^\/(inbox|chat)(\/|$)/, methods: 'all' }, // customer messages & personal information; AI chat
+  { re: /^\/oauth\/(?!meta\/start$|pending\/)/, methods: 'all' }, // only Facebook can be connected during the pilot
+  { re: /^\/accounts$/, methods: 'write' }, // no hand-entered tokens; connect with Facebook Login instead
+  { re: /^\/autopilot(\/|$)/, methods: 'write' },
   { re: /^\/billing\/(checkout|portal)$/, methods: 'all' },
   { re: /^\/analytics\/refresh$/, methods: 'all' },
 ];
@@ -101,7 +105,7 @@ api.get('/dashboard', (req, res) => {
   const now = new Date().toISOString();
   const d = getDealership();
   res.json({
-    dealership: d,
+    dealership: presentDealership(d),
     subscription: usageSummary(),
     post_counts: statusCounts(),
     inbox: inboxCounts(),
@@ -128,13 +132,16 @@ api.get('/activity', (req, res) => {
 });
 
 // --- dealership & accounts ---
-api.get('/dealership', (req, res) => res.json(getDealership()));
+api.get('/dealership', (req, res) => res.json(presentDealership(getDealership())));
 api.put('/dealership', admin, (req, res) => {
   const body = { ...req.body };
   const before = getDealership();
+  if (body.inventory_feed_url === '') delete body.inventory_feed_url; // blank = keep the saved feed
+  if (body.remove_inventory_feed) body.inventory_feed_url = '';
+  delete body.remove_inventory_feed;
   const updated = updateDealership(body);
   if (updated.timezone !== before.timezone) rescheduleAllRules();
-  res.json(updated);
+  res.json(presentDealership(updated));
 });
 
 // Logo: JPG, PNG (transparency kept) or WebP. SVG is refused because it can carry scripts.
@@ -179,7 +186,39 @@ api.post('/vehicles/sync-feed', admin, async (req, res) => {
   requireFeature('inventoryFeed');
   const d = getDealership();
   if (!d.inventory_feed_url) throw httpError(400, 'Add your inventory feed URL in Settings first');
-  res.json(await syncInventoryFeed(d));
+  try {
+    res.json(await syncInventoryFeed(d, { trigger: 'manual' }));
+  } catch (err) {
+    throw httpError(err.status || 502, err.message);
+  }
+});
+// Website check: compare up to 10 vehicles with their pages on the dealership's site (runs in the background).
+const validationsRunning = new Set();
+api.post('/inventory/validate', admin, (req, res) => {
+  const dealershipId = tenantId();
+  if (validationsRunning.has(dealershipId)) return res.status(202).json({ running: true });
+  validationsRunning.add(dealershipId);
+  const limit = Math.min(10, Math.max(1, Number(req.body?.limit) || 10));
+  runWithTenant(dealershipId, () =>
+    validateInventory({ limit, actor: req.session.user.email })
+      .catch((err) => logActivity('system', 'inventory.validation_failed', err.message))
+      .finally(() => validationsRunning.delete(dealershipId)),
+  );
+  res.status(202).json({ running: true });
+});
+api.get('/inventory/validation', admin, (req, res) => res.json({ running: validationsRunning.has(tenantId()), report: latestValidation() }));
+
+api.get('/inventory/syncs', admin, (req, res) => {
+  const d = getDealership();
+  res.json({
+    feed_configured: !!d.inventory_feed_url,
+    feed: maskFeedUrl(d.inventory_feed_url),
+    every_minutes: d.inventory_sync_minutes,
+    last_synced_at: d.feed_last_synced_at,
+    last_error: d.feed_last_error,
+    failures: d.feed_failures,
+    syncs: listInventorySyncs(20),
+  });
 });
 
 // --- posts ---
@@ -322,7 +361,7 @@ api.delete('/team/members/:id', admin, (req, res) => {
 api.get('/export', admin, (req, res) => {
   const t = tenantId();
   const rows = (table) => all(`SELECT * FROM ${table} WHERE dealership_id = ?`, t);
-  const { stripe_customer_id, stripe_subscription_id, ...dealership } = getDealership();
+  const dealership = presentDealership(getDealership());
   res.set('Content-Disposition', `attachment; filename="dealer-social-export-${new Date().toISOString().slice(0, 10)}.json"`);
   res.json({
     exported_at: new Date().toISOString(),

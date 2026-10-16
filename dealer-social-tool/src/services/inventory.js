@@ -1,16 +1,17 @@
 import { all, get, run, getDb, updateRow, parseJson, logActivity, nowIso } from '../db.js';
-import { normaliseVehicle, readInventoryCsv, parseCsv } from '../shared/inventory-csv.js';
+import { normaliseVehicle, readInventory, parseCsv } from '../shared/inventory-csv.js';
+import { decrypt } from '../crypto.js';
 import { tenantId } from '../tenant.js';
 import { assertPublicUrl } from '../net.js';
 import { httpError } from './errors.js';
 
-const FIELDS = ['stock_number', 'vin', 'year', 'make', 'model', 'trim', 'condition', 'price', 'mileage', 'exterior_color', 'features', 'photos', 'status'];
+const FIELDS = ['stock_number', 'vin', 'year', 'make', 'model', 'trim', 'condition', 'price', 'mileage', 'exterior_color', 'features', 'photos', 'status', 'detail_url', 'is_demo'];
 
 export { parseCsv };
 
 export function presentVehicle(row) {
   if (!row) return row;
-  return { ...row, photos: parseJson(row.photos, []), sold_celebrated: !!row.sold_celebrated };
+  return { ...row, photos: parseJson(row.photos, []), sold_celebrated: !!row.sold_celebrated, is_demo: !!row.is_demo };
 }
 
 export function vehicleTitle(v) {
@@ -53,7 +54,7 @@ export function listVehicles({ status, condition, q, limit = 500 } = {}) {
   if (condition === 'new') where.push(`condition = 'new'`);
   if (condition === 'used') where.push(`condition IN ('used', 'certified')`);
   for (const word of String(q || '').trim().split(/\s+/).filter(Boolean).slice(0, 8)) {
-    where.push(`(year || ' ' || make || ' ' || model || ' ' || trim || ' ' || stock_number || ' ' || vin || ' ' || exterior_color) LIKE ?`);
+    where.push(`(COALESCE(year, '') || ' ' || make || ' ' || model || ' ' || trim || ' ' || stock_number || ' ' || vin || ' ' || exterior_color) LIKE ?`);
     params.push(`%${word.replace(/[%_]/g, '')}%`);
   }
   return all(`SELECT * FROM vehicles WHERE ${where.join(' AND ')} ORDER BY created_at DESC, id DESC LIMIT ?`, ...params, Math.min(2000, Number(limit) || 500)).map(
@@ -65,8 +66,8 @@ export function getVehicle(id) {
   return presentVehicle(get('SELECT * FROM vehicles WHERE id = ? AND dealership_id = ?', id, tenantId()));
 }
 
-export function createVehicle(input) {
-  const v = clean(input);
+export function createVehicle(input, { source = 'manual' } = {}) {
+  const v = { ...clean(input), source, last_seen_at: source === 'manual' ? null : nowIso() };
   assertUnique(v);
   const keys = Object.keys(v);
   const { lastInsertRowid } = run(
@@ -139,21 +140,37 @@ export function markSoldCelebrated(id) {
 
 const sameValue = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
+/** Posts for a vehicle that has left the inventory can't be approved or published any more. */
+function withdrawPostsFor(vehicleId, reason) {
+  run(
+    `UPDATE posts SET status = 'rejected', error = ?, approved_by = NULL, approved_by_name = NULL, approved_at = NULL, updated_at = ?
+     WHERE dealership_id = ? AND vehicle_id = ? AND post_type != 'sold_celebration' AND status IN ('draft', 'pending_approval', 'approved', 'scheduled', 'failed')`,
+    reason,
+    nowIso(),
+    tenantId(),
+    vehicleId,
+  );
+}
+
 /**
  * Add new vehicles and update existing ones, matched by VIN first, then stock number, so re-importing
  * tomorrow's export never creates duplicates. With dryRun nothing is saved: you get the same report as a preview.
- * markMissingSold marks available vehicles that aren't in the file as sold (only when the file has 3+ vehicles).
+ * markMissingSold: imported/feed vehicles that are no longer in the file are marked sold ("removed"), their open
+ * posts are withdrawn, and they come back automatically if they reappear. Vehicles added by hand are never touched.
+ * Guard: nothing is removed when the file has fewer than 3 vehicles or would remove more than half the lot at once.
  */
-export function importVehiclesCsv(text, { actor = 'user', dryRun = false, markMissingSold = false } = {}) {
-  const parsed = readInventoryCsv(text);
+export function importVehiclesCsv(text, { actor = 'user', dryRun = false, markMissingSold = false, source = 'csv', maxRemovalShare = 0.5 } = {}) {
+  const parsed = readInventory(text);
   if (parsed.error) throw httpError(400, parsed.error);
   const result = {
     dry_run: dryRun,
+    format: parsed.format,
     total: parsed.items.length,
     created: 0,
     updated: 0,
     unchanged: 0,
     marked_sold: 0,
+    restored: 0,
     duplicates_in_file: 0,
     errors: [],
     rows: [],
@@ -165,6 +182,7 @@ export function importVehiclesCsv(text, { actor = 'user', dryRun = false, markMi
   const seenKeys = new Map();
   const report = (row) => result.rows.length < 300 && result.rows.push(row);
   const db = getDb();
+  const now = nowIso();
   db.exec('BEGIN');
   try {
     for (const { line, vehicle: v, error } of parsed.items) {
@@ -198,7 +216,12 @@ export function importVehiclesCsv(text, { actor = 'user', dryRun = false, markMi
       try {
         if (existing) {
           seenIds.add(existing.id);
-          const changes = Object.keys(v).filter((k) => !sameValue(existing[k], v[k]));
+          // Back in the feed after being removed: available again (unless the feed says otherwise).
+          if (existing.removed_at && v.status === undefined) {
+            v.status = 'available';
+            result.restored++;
+          }
+          const changes = Object.keys(v).filter((k) => !sameValue(existing[k], k === 'is_demo' ? !!v[k] : v[k]));
           if (!changes.length) {
             result.unchanged++;
             report({ ...base, action: 'unchanged' });
@@ -207,8 +230,9 @@ export function importVehiclesCsv(text, { actor = 'user', dryRun = false, markMi
             result.updated++;
             report({ ...base, action: 'update', changes });
           }
+          run(`UPDATE vehicles SET last_seen_at = ?, removed_at = NULL, source = CASE WHEN source = 'manual' THEN source ELSE ? END WHERE id = ? AND dealership_id = ?`, now, source, existing.id, tenantId());
         } else {
-          seenIds.add(createVehicle(v).id);
+          seenIds.add(createVehicle(v, { source }).id);
           result.created++;
           report({ ...base, action: 'create' });
         }
@@ -217,18 +241,27 @@ export function importVehiclesCsv(text, { actor = 'user', dryRun = false, markMi
       }
     }
     if (markMissingSold) {
-      if (seenIds.size < 3) result.warning = 'Nothing was marked sold: the file has fewer than 3 valid vehicles.';
+      const imported = all(`SELECT * FROM vehicles WHERE dealership_id = ? AND status = 'available' AND source != 'manual'`, tenantId());
+      const missing = imported.filter((row) => !seenIds.has(row.id));
+      if (seenIds.size < 3) result.warning = 'Nothing was marked as removed: the file has fewer than 3 valid vehicles.';
+      else if (missing.length > 5 && missing.length > imported.length * maxRemovalShare)
+        result.warning = `Nothing was marked as removed: ${missing.length} of ${imported.length} vehicles are missing from the file, which looks like an incomplete feed.`;
       else
-        for (const row of all(`SELECT * FROM vehicles WHERE dealership_id = ? AND status = 'available'`, tenantId())) {
-          if (seenIds.has(row.id)) continue;
+        for (const row of missing) {
           updateVehicle(row.id, { status: 'sold' });
+          run('UPDATE vehicles SET removed_at = ? WHERE id = ? AND dealership_id = ?', now, row.id, tenantId());
+          withdrawPostsFor(row.id, 'Vehicle is no longer in the inventory (sold or removed), so this post was withdrawn.');
           result.marked_sold++;
           report({ line: null, action: 'sold', title: vehicleTitle(row), stock_number: row.stock_number, vin: row.vin });
         }
     }
     if (dryRun) db.exec('ROLLBACK');
     else {
-      logActivity(actor, 'inventory.imported', `${result.created} added, ${result.updated} updated, ${result.marked_sold} marked sold, ${result.errors.length} skipped`);
+      logActivity(
+        actor,
+        'inventory.imported',
+        `${result.created} added, ${result.updated} updated, ${result.marked_sold} removed, ${result.errors.length} skipped${result.warning ? ` (${result.warning})` : ''}`,
+      );
       db.exec('COMMIT');
     }
   } catch (err) {
@@ -238,20 +271,81 @@ export function importVehiclesCsv(text, { actor = 'user', dryRun = false, markMi
   return { ...result, seenIds };
 }
 
+const MAX_FEED_BYTES = 50 * 1024 * 1024;
+
+/** Download a feed: public hosts only (redirects re-checked), "user:pass@" sent as Basic auth, 50 MB max. */
+export async function downloadFeed(raw) {
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error('The feed address is not a valid URL');
+  }
+  const headers = { accept: 'text/csv, application/xml, text/xml, text/plain, */*' };
+  if (url.username) {
+    headers.authorization = `Basic ${Buffer.from(`${decodeURIComponent(url.username)}:${decodeURIComponent(url.password)}`).toString('base64')}`;
+    url.username = '';
+    url.password = '';
+  }
+  const host = url.host;
+  for (let hop = 0; hop < 4; hop++) {
+    await assertPublicUrl(url.href);
+    const res = await fetch(url, { redirect: 'manual', headers: url.host === host ? headers : { accept: headers.accept }, signal: AbortSignal.timeout(60_000) });
+    if ([301, 302, 303, 307, 308].includes(res.status) && res.headers.get('location')) {
+      url = new URL(res.headers.get('location'), url);
+      continue;
+    }
+    if (!res.ok) throw new Error(`Feed download failed: HTTP ${res.status}`);
+    if (Number(res.headers.get('content-length') || 0) > MAX_FEED_BYTES) throw new Error('The feed is larger than 50 MB');
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length > MAX_FEED_BYTES) throw new Error('The feed is larger than 50 MB');
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(buf);
+    } catch {
+      return new TextDecoder('windows-1252').decode(buf);
+    }
+  }
+  throw new Error('The feed address redirects too many times');
+}
+
 /**
- * Pull the dealership's inventory feed (CSV URL from their DMS / website provider).
- * Vehicles that disappear from the feed are marked sold, which triggers sold-celebration posts.
+ * Pull the dealership's inventory feed (Facebook/Meta catalog XML or CSV, or a provider CSV/XML export).
+ * Every run is recorded in inventory_syncs. Vehicles that leave the feed are removed from promotion.
  */
-export async function syncInventoryFeed(dealer) {
-  if (!dealer.inventory_feed_url) return null;
-  await assertPublicUrl(dealer.inventory_feed_url);
-  const res = await fetch(dealer.inventory_feed_url, { signal: AbortSignal.timeout(30_000), redirect: 'error' });
-  if (!res.ok) throw new Error(`Feed download failed: HTTP ${res.status}`);
-  const text = await res.text();
-  // Vehicles that leave the feed are sold (guarded against a broken or empty feed wiping out the lot).
-  const result = importVehiclesCsv(text, { actor: 'feed', markMissingSold: !!dealer.feed_marks_sold });
-  const sold = result.marked_sold;
-  const summary = `${result.created} added, ${result.updated} updated, ${sold} marked sold${result.errors.length ? `, ${result.errors.length} rows skipped` : ''}`;
-  run('UPDATE dealerships SET feed_last_synced_at = ?, feed_last_result = ? WHERE id = ?', nowIso(), summary, tenantId());
-  return { ...result, seenIds: undefined, sold, summary };
+export async function syncInventoryFeed(dealer, { trigger = 'schedule' } = {}) {
+  const url = decrypt(dealer.inventory_feed_url);
+  if (!url) return null;
+  const started = nowIso();
+  const { lastInsertRowid } = run('INSERT INTO inventory_syncs (dealership_id, started_at, trigger) VALUES (?, ?, ?)', tenantId(), started, trigger);
+  const syncId = Number(lastInsertRowid);
+  try {
+    const text = await downloadFeed(url);
+    const result = importVehiclesCsv(text, { actor: 'feed', markMissingSold: !!dealer.feed_marks_sold, source: 'feed' });
+    const summary = `${result.created} added, ${result.updated} updated, ${result.unchanged} unchanged, ${result.marked_sold} removed${result.errors.length ? `, ${result.errors.length} skipped` : ''}${result.warning ? `. ${result.warning}` : ''}`;
+    run(
+      `UPDATE inventory_syncs SET finished_at = ?, ok = 1, format = ?, total = ?, created = ?, updated = ?, unchanged = ?, removed = ?, skipped = ?, message = ? WHERE id = ?`,
+      nowIso(),
+      result.format,
+      result.total,
+      result.created,
+      result.updated,
+      result.unchanged,
+      result.marked_sold,
+      result.errors.length,
+      summary,
+      syncId,
+    );
+    run(`UPDATE dealerships SET feed_last_synced_at = ?, feed_last_result = ?, feed_last_error = '', feed_failures = 0 WHERE id = ?`, started, summary, tenantId());
+    return { ...result, seenIds: undefined, sold: result.marked_sold, summary };
+  } catch (err) {
+    const message = err.message || 'Feed sync failed';
+    run('UPDATE inventory_syncs SET finished_at = ?, ok = 0, message = ? WHERE id = ?', nowIso(), message, syncId);
+    run('UPDATE dealerships SET feed_last_synced_at = ?, feed_last_error = ?, feed_failures = feed_failures + 1 WHERE id = ?', started, message, tenantId());
+    logActivity('feed', 'inventory.sync_failed', message);
+    throw err;
+  }
+}
+
+export function listInventorySyncs(limit = 20) {
+  return all('SELECT * FROM inventory_syncs WHERE dealership_id = ? ORDER BY id DESC LIMIT ?', tenantId(), limit);
 }

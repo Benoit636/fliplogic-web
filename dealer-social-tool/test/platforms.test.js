@@ -16,6 +16,7 @@ const { createAccount, getAccountRaw, listAccounts } = await import('../src/serv
 const oauth = await import('../src/services/oauth.js');
 const { createPost, approvePost } = await import('../src/services/posts.js');
 const { publishPost } = await import('../src/services/publisher.js');
+const { run } = await import('../src/db.js');
 
 let calls;
 let replies;
@@ -38,17 +39,20 @@ afterEach(() => {
 const account = (extra = {}) => ({ id: 1, external_id: 'EXT', access_token: 'TOKEN', ...extra });
 const post = (extra = {}) => ({ id: 9, content: 'Hi', media: [], metrics: {}, ...extra });
 
-test('Facebook: text posts go to /feed, photo posts to /photos', async () => {
-  replies.push({ body: { id: 'PAGE_POST' } });
+test('Facebook: text posts go to /feed, photo posts to /photos, then the post is read back', async () => {
+  replies.push({ body: { id: 'PAGE_POST' } }, { body: { message: 'Hello', permalink_url: 'https://www.facebook.com/p/1', full_picture: '' } });
   const r = await facebookAdapter.publish(post(), account(), 'Hello');
   assert.match(calls[0].url, /\/EXT\/feed$/);
   assert.deepEqual(calls[0].body, { message: 'Hello', access_token: 'TOKEN' });
+  assert.match(calls[1].url, /\/PAGE_POST\?fields=message%2Cpermalink_url%2Cfull_picture/);
   assert.equal(r.external_id, 'PAGE_POST');
+  assert.equal(r.external_url, 'https://www.facebook.com/p/1');
+  assert.deepEqual(r.shown, { message: 'Hello', has_picture: false, permalink_url: 'https://www.facebook.com/p/1' });
 
-  replies.push({ body: { id: 'PHOTO', post_id: 'PAGE_PHOTO_POST' } });
+  replies.push({ body: { id: 'PHOTO', post_id: 'PAGE_PHOTO_POST' } }, { body: {} });
   const r2 = await facebookAdapter.publish(post({ media: ['https://img/1.jpg'] }), account(), 'Hello');
-  assert.match(calls[1].url, /\/EXT\/photos$/);
-  assert.equal(calls[1].body.url, 'https://img/1.jpg');
+  assert.match(calls[2].url, /\/EXT\/photos$/);
+  assert.equal(calls[2].body.url, 'https://img/1.jpg');
   assert.equal(r2.external_id, 'PAGE_PHOTO_POST');
 });
 
@@ -155,6 +159,7 @@ tenantTest('expiring tokens are refreshed before publishing, and stored encrypte
   assert.equal(getAccountRaw(acct.id).refresh_token, 'refresh-me');
 
   // A live publish failure is recorded on the account for the Settings page.
+  run('UPDATE accounts SET publish_allowed = 1 WHERE id = ?', acct.id);
   const p = createPost({ platform: 'google_business', content: 'Hi' });
   approvePost(p.id);
   replies.push({ status: 403, body: { error: { message: 'The caller does not have permission' } } });

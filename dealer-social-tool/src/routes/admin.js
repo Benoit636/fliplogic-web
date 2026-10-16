@@ -2,6 +2,7 @@ import express from 'express';
 import { platformOverview, adminUpdateDealership } from '../services/admin.js';
 import { switchDealership } from '../services/auth.js';
 import { createDealerWithAdmin, inviteDealerAdmin } from '../services/setup.js';
+import { listPages, unlockPage, lockPage } from '../services/admin.js';
 import { httpError } from '../services/errors.js';
 
 /** Platform-owner console. Only emails listed in SUPERADMIN_EMAILS get in. */
@@ -19,6 +20,10 @@ adminRoutes.post('/dealerships', (req, res) => {
 adminRoutes.post('/dealerships/:number/admin-invite', (req, res) => {
   res.status(201).json({ invite_url: inviteDealerAdmin(req.params.number, req.body?.admin_email).invite_url });
 });
+// Facebook Pages: every connected Page is locked until the platform owner unlocks it (test Page or live Page).
+adminRoutes.get('/pages', (req, res) => res.json(listPages()));
+adminRoutes.post('/pages/:id/unlock', (req, res) => res.json(unlockPage(Number(req.params.id), { ...req.body, by: req.session.user.email })));
+adminRoutes.post('/pages/:id/lock', (req, res) => res.json(lockPage(Number(req.params.id), req.session.user.email)));
 adminRoutes.patch('/dealerships/:id', (req, res) => res.json(adminUpdateDealership(Number(req.params.id), req.body || {})));
 adminRoutes.post('/dealerships/:id/open', (req, res) => {
   switchDealership(req.session, Number(req.params.id));

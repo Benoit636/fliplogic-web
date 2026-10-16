@@ -102,7 +102,7 @@ export function createApp() {
 
   // OAuth redirect target for "Connect" buttons.
   app.get('/oauth/:provider/callback', async (req, res) => {
-    if (config.pilotMode) return res.redirect('/app#/settings?connect_error=Social%20accounts%20are%20not%20connected%20during%20the%20pilot');
+    if (config.pilotMode && req.params.provider !== 'meta') return res.redirect('/app#/settings?connect_error=Only%20Facebook%20can%20be%20connected%20during%20the%20pilot');
     if (req.query.error) return res.redirect(`/app#/settings?connect_error=${encodeURIComponent(req.query.error_description || req.query.error)}`);
     try {
       const row = await completeOAuth(req.params.provider, req.query.state, req.query.code);

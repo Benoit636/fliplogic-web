@@ -12,6 +12,7 @@
     "dev": "node --disable-warning=ExperimentalWarning --watch src/server.js",
     "seed": "node --disable-warning=ExperimentalWarning src/seed.js",
     "check": "node --disable-warning=ExperimentalWarning src/preflight.js",
+    "validate-inventory": "node --disable-warning=ExperimentalWarning scripts/validate-inventory.js",
     "create-dealer": "node --disable-warning=ExperimentalWarning scripts/create-dealer.js",
     "test": "node --disable-warning=ExperimentalWarning --test 'test/*.test.js'",
     "stripe:setup": "node --disable-warning=ExperimentalWarning scripts/stripe-setup.js",

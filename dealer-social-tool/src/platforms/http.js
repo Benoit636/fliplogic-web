@@ -1,11 +1,13 @@
 // Small fetch wrapper for the social network APIs with readable errors.
 
-export async function request(url, { method = 'GET', token, headers = {}, json, form, timeout = 30_000 } = {}) {
+export async function request(url, { method = 'GET', token, headers = {}, json, form, multipart, timeout = 30_000 } = {}) {
   const init = { method, headers: { ...headers }, signal: AbortSignal.timeout(timeout) };
   if (token) init.headers.authorization = `Bearer ${token}`;
   if (json !== undefined) {
     init.headers['content-type'] = 'application/json';
     init.body = JSON.stringify(json);
+  } else if (multipart) {
+    init.body = multipart; // FormData: fetch sets the multipart boundary
   } else if (form) {
     init.headers['content-type'] = 'application/x-www-form-urlencoded';
     init.body = new URLSearchParams(form).toString();
